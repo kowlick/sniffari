@@ -44,6 +44,7 @@ starts a fresh one. Double-click it, or pass a port (`restart.bat 8080`).
 | `npm run map` | Regenerate `maps/mission.txt` |
 | `node scripts/preview.mjs --walk` | Render a map + simulated walk to `preview.svg` |
 | `npm run tune` | Sweep map densities over many seeds and report how rounds actually play |
+| `npm run ai-tourney` | Play the opponent difficulties against each other and report win rates |
 
 This is a LAN game and nothing else — no accounts, no internet dependency, no remote play.
 `PORT` is the only environment variable.

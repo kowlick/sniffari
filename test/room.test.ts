@@ -224,3 +224,103 @@ test('claiming is refused while the host is present, and is a no-op for the host
   assert.match(room.claimHost(host.id) ?? '', /already the host/i);
   assert.equal(room.hostId, host.id);
 });
+
+// --- computer opponents ---------------------------------------------------------------
+
+test('bots take seats and dogs, and only the host may add or remove them', async () => {
+  const room = new Room(await boards());
+  const host = seat(room, 'Ada', 'beagle');
+  const guest = seat(room, 'Bo', 'labrador');
+
+  assert.match(room.addBot(guest.id, 'scout') ?? '', /host/i, 'guests cannot add opponents');
+  assert.equal(room.addBot(host.id, 'scout'), null);
+  assert.equal(room.players.size, 3);
+
+  const bot = [...room.players.values()].find((p) => p.kind === 'bot')!;
+  assert.ok(bot.dogId, 'a bot gets a dog, or it is not playing');
+  assert.notEqual(bot.dogId, 'beagle');
+  assert.notEqual(bot.dogId, 'labrador');
+  assert.equal(bot.ai, 'scout');
+
+  assert.match(room.removeBot(guest.id, bot.id) ?? '', /host/i);
+  assert.match(room.removeBot(host.id, host.id) ?? '', /not a computer opponent/i);
+  assert.equal(room.removeBot(host.id, bot.id), null);
+  assert.equal(room.players.size, 2);
+});
+
+/**
+ * A bot has no socket, and `conn === null` otherwise means "this player dropped". Getting
+ * this wrong greys out every opponent as though the whole table had walked off.
+ */
+test('a bot is never absent, never rejoinable, and never the host', async () => {
+  const room = new Room(await boards());
+  const host = seat(room, 'Ada', 'beagle');
+  assert.equal(room.addBot(host.id, 'pup'), null);
+  const bot = [...room.players.values()].find((p) => p.kind === 'bot')!;
+
+  const state = room.stateFor(host.id);
+  assert.equal(state.t, 'state');
+  const wire = (state as Extract<typeof state, { t: 'state' }>).players.find((p) => p.id === bot.id)!;
+  assert.equal(wire.connected, true, 'a bot with no socket is present, not disconnected');
+  assert.equal(wire.isBot, true);
+  assert.equal(wire.ai, 'pup');
+
+  // A bot's token is not a session anyone may resume.
+  assert.ok('error' in room.rejoin(bot.token, silent), 'a bot token must not open a seat');
+
+  // And the host seat is never a machine's, even once the real host has gone.
+  assert.equal(room.hostId, host.id);
+  assert.match(room.claimHost(bot.id) ?? '', /cannot host/i);
+  room.dropConnection(silent);
+  room.hostAwaySince = Date.now() - CONFIG.lobby.hostGraceMs - 1;
+  assert.equal(room.hostAway, true);
+  assert.equal(room.hostId, host.id, 'the seat stays empty rather than falling to the bot');
+});
+
+test('a bot dropping out is not what dropConnection is for', async () => {
+  const room = new Room(await boards());
+  const hostConn: Connection = { send() {} };
+  const host = room.addPlayer('Ada', hostConn) as { id: string };
+  assert.equal(room.pickDog(host.id, 'beagle'), null);
+  assert.equal(room.addBot(host.id, 'scout'), null);
+
+  room.dropConnection(hostConn);
+  const bot = [...room.players.values()].find((p) => p.kind === 'bot')!;
+  assert.equal(bot.conn, null, 'a bot never had a connection to lose');
+  assert.equal(room.hostId, host.id, 'and dropping a human does not disturb the bot');
+});
+
+/** A person always beats a machine for a seat. */
+test('a full lobby stands a bot up rather than turning a human away', async () => {
+  const room = new Room(await boards());
+  const host = seat(room, 'Ada', 'beagle');
+  for (let i = 1; i < CONFIG.lobby.maxPlayers; i++) {
+    assert.equal(room.addBot(host.id, i === 1 ? 'scout' : 'pup'), null, `bot ${i}`);
+  }
+  assert.equal(room.players.size, CONFIG.lobby.maxPlayers);
+  assert.equal(room.addBot(host.id, 'pup'), 'That game is full (8 players).');
+
+  const late = room.addPlayer('Bo', silent);
+  assert.ok(!('error' in late), 'a human must still get in');
+  assert.equal(room.players.size, CONFIG.lobby.maxPlayers, 'and the room is still capped at 8');
+
+  const tiers = [...room.players.values()].filter((p) => p.kind === 'bot').map((p) => p.ai);
+  assert.ok(tiers.includes('scout'), 'the strongest opponent should have survived the eviction');
+});
+
+test('a player can hand their own dog to the computer, but not anyone else s', async () => {
+  const room = new Room(await boards());
+  const host = seat(room, 'Ada', 'beagle');
+  const guest = seat(room, 'Bo', 'labrador');
+
+  assert.equal(room.setAutopilot(host.id, 'scout'), null);
+  assert.equal(room.players.get(host.id)!.ai, 'scout');
+  assert.equal(room.players.get(host.id)!.kind, 'human', 'autopilot does not make you a bot');
+  assert.equal(room.players.get(guest.id)!.ai, null, 'and it does not touch anybody else');
+
+  // Handing it back.
+  assert.equal(room.setAutopilot(host.id, null), null);
+  assert.equal(room.players.get(host.id)!.ai, null);
+
+  assert.match(room.setAutopilot(host.id, 'nope' as never) ?? '', /difficulty/i);
+});

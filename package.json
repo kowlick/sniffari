@@ -13,7 +13,8 @@
     "test": "node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "map": "node scripts/make-map.mjs",
-    "tune": "node scripts/tune.mjs"
+    "tune": "node scripts/tune.mjs",
+    "ai-tourney": "node scripts/ai-tourney.ts"
   },
   "dependencies": {
     "ws": "^8.18.0"

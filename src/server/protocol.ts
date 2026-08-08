@@ -28,12 +28,26 @@ export const DOGS = [
 
 export type Phase = 'lobby' | 'setup' | 'place' | 'reveal' | 'walk' | 'score' | 'match-end';
 
+/**
+ * Opponent strength, weakest first. The order is the ladder, so the lobby can render it
+ * and `addPlayer` knows which bot to stand up when a human needs a seat.
+ */
+export const DIFFICULTIES = ['pup', 'scout'] as const;
+export type Difficulty = (typeof DIFFICULTIES)[number];
+
 export type PublicPlayer = {
   id: string;
   name: string;
   dogId: string | null;
   connected: boolean;
   isHost: boolean;
+  /** A seat with nobody behind it. Bots never hold the host seat. */
+  isBot: boolean;
+  /**
+   * Who is choosing this seat's placements. Set for every bot, and for a human who handed
+   * their dog to the computer to watch it play. `null` means a person is playing.
+   */
+  ai: Difficulty | null;
   /** Has committed this turn's placement. The placement itself stays private until reveal. */
   locked: boolean;
   matchScore: number;
@@ -78,6 +92,11 @@ export type ServerMessage =
         scorePerPlacingMs: number;
         /** Tile kinds available every turn. Unlimited supply — placements are the scarcity. */
         palette: TileKind[];
+        /**
+         * The opponent ladder, weakest first. Served rather than duplicated in the client
+         * so the lobby cannot drift from the tiers the server can actually play.
+         */
+        difficulties: { id: Difficulty; label: string }[];
       };
     }
   | {
@@ -104,6 +123,16 @@ export type ClientMessage =
   | { t: 'start' }
   /** Take the host seat when it is empty. Any player, not host only — that is the point. */
   | { t: 'claimHost' }
+  /** Host only, between matches. Adds a computer opponent, which takes a seat and a dog. */
+  | { t: 'addBot'; difficulty: Difficulty }
+  /** Host only, between matches. */
+  | { t: 'removeBot'; playerId: string }
+  /**
+   * Hand your own dog to the computer, or take it back. Self only — nobody else decides
+   * who plays your dog. With every seat on autopilot the match plays itself and the room
+   * becomes something to watch.
+   */
+  | { t: 'setAutopilot'; difficulty: Difficulty | null }
   /** Host only, between matches. */
   | { t: 'setRounds'; rounds: number }
   /** Host only, mid-match. Jumps to the final standings, keeping scores. */

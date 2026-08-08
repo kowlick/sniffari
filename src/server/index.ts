@@ -168,6 +168,12 @@ wss.on('connection', (ws: WebSocket) => {
               return room.start(id);
             case 'claimHost':
               return room.claimHost(id);
+            case 'addBot':
+              return room.addBot(id, msg.difficulty);
+            case 'removeBot':
+              return room.removeBot(id, msg.playerId);
+            case 'setAutopilot':
+              return room.setAutopilot(id, msg.difficulty);
             case 'setRounds':
               return room.setRounds(id, msg.rounds);
             case 'endMatch':

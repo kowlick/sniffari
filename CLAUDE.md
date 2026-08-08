@@ -87,6 +87,19 @@ an idle lobby, and a claim button that only appears on the next unrelated state 
 button nobody finds. Mid-match needs no button: the phase timers run the match out to
 `match-end` on their own, and the lobby overlay comes back with the claim button on it.
 
+**`src/server/ai/` — computer opponents, and the boundary that stops them cheating.**
+The whole design rests on `simulateWalk` being pure and costing 0.036–0.140 ms against only
+250–785 legal placements a turn: scoring *every* option by simulating the round it produces
+costs about a tenth of a second, so a bot needs no heuristic evaluation function at all. The
+danger is the opposite one — a bot runs inside the server with `secretTiles` and everyone's
+`pending` in scope, and one that read them would be cheating undetectably. So the search
+never takes a `Room`; it takes a `BotView` built from nothing but the `state` message that
+seat's browser was already going to receive (`view.ts`). If a human cannot see it, it is not
+in the payload. Bots also place through `place()`/`lock()` like any socket message, so
+legality and the collision rule apply by construction. Both properties have tests that fail
+if they stop holding. Difficulty is one engine plus a config block, never a second
+algorithm; `npm run ai-tourney` is what decides whether the ladder actually orders.
+
 **`public/` — rendering only.** The client sends one message per turn and otherwise just
 draws what it is told. It never simulates. `client.js` owns the socket, the DOM and
 playback; `render.js` lays out the board; `sprites.js` holds every piece of artwork;

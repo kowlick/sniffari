@@ -81,6 +81,18 @@
             <h2>Match length</h2>
             <div id="rounds" class="rounds"></div>
           </div>
+          <!-- Host only. Opponents take a seat and a dog like anyone else, so the 8-player
+               cap and the board size both count them. -->
+          <div id="host-bots" class="hidden">
+            <h2>Computer opponents</h2>
+            <div id="bots" class="rounds"></div>
+          </div>
+          <!-- Any player, for their own dog. With every seat on autopilot the match plays
+               itself, which is the way to just watch. -->
+          <div id="autopilot" class="hidden">
+            <h2>Your dog</h2>
+            <div id="autopilot-picks" class="rounds"></div>
+          </div>
           <p id="lobby-hint" class="hint"></p>
           <button id="lobby-start" class="primary hidden">Start the match</button>
           <!-- Only ever visible when the host's seat is actually empty. Without it a lobby

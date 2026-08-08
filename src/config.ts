@@ -122,6 +122,12 @@ export const CONFIG = {
      */
     hostGraceMs: 15_000,
     /**
+     * A person always beats a machine for a seat. When someone opens the URL and the room
+     * is full of opponents, the weakest one stands up rather than turning the human away.
+     * Only between matches — a bot that is mid-match is holding a dog with a score.
+     */
+    evictBotsForHumans: true,
+    /**
      * WebSocket ping interval. A closed tab sends a TCP FIN and we hear about it at once,
      * but a phone that leaves Wi-Fi or goes flat says nothing at all — without a heartbeat
      * that socket stays "open" until the OS TCP timeout, which is minutes. Two missed
@@ -129,6 +135,50 @@ export const CONFIG = {
      * `connected: false` mean something.
      */
     heartbeatMs: 8_000,
+  },
+
+  /**
+   * Computer opponents.
+   *
+   * The whole design rests on one measurement: `simulateWalk` is a pure function costing
+   * 0.036 ms on the small board and 0.140 ms on the large one, and there are only 250-785
+   * legal placements in a turn. Scoring *every* legal placement by simulating the actual
+   * round therefore costs about a tenth of a second. A bot never needs a heuristic
+   * evaluation function, because it can afford to ask the real rules what happens.
+   *
+   * That is why even the weakest opponent is strategic: it is not guessing, it is picking
+   * a move it has watched play out. The difficulty ladder is about how much of the *rest*
+   * of the game each tier models, not about whether it understands the board.
+   */
+  ai: {
+    /**
+     * Total thinking time for the whole bot team per placement turn, shared out by
+     * difficulty. Not per bot: seven opponents each taking a second would freeze the one
+     * thread the server has, and every human's board would stop responding while they
+     * thought. The search yields to the event loop throughout, so this is a budget, not a
+     * stall.
+     *
+     * 3s of a 30s turn buys ~21,000 simulations on the large board and ~85,000 on the
+     * small one. That is far more than the current search can spend.
+     */
+    turnBudgetMs: 3_000,
+    /** Floor per bot, so a full lobby of eight still leaves each one able to think. */
+    minBudgetMs: 60,
+    /**
+     * The ladder. `lambda` weighs opponents' scores against the bot's own, and is what
+     * makes the tiers feel like different players rather than the same player with better
+     * eyesight: at 0 the bot does not know you exist, and at 0.75 it will spend a
+     * placement to spoil your route.
+     *
+     * `sampleFraction` below 1 means the bot only looks at part of the board, and
+     * `temperature` above 0 means it picks softmax-weighted among the moves it liked
+     * rather than always the best one. Both are ways of being beatable that still leave
+     * every individual move a considered one.
+     */
+    levels: {
+      pup: { label: 'Pup', lambda: 0, sampleFraction: 0.45, temperature: 1.6, weight: 1 },
+      scout: { label: 'Scout', lambda: 0.25, sampleFraction: 1, temperature: 0, weight: 2 },
+    },
   },
 } as const;
 

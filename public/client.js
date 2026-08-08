@@ -266,16 +266,23 @@ function renderUI() {
     const canEnd = Boolean(me?.isHost) && mid;
     if (!canEnd) $('end-confirm').classList.add('hidden');
     $('end-match').classList.toggle('hidden', !canEnd || !$('end-confirm').classList.contains('hidden'));
-    $('lock').classList.toggle('hidden', state.phase !== 'place');
+    // A dog on autopilot is not yours to place for — the computer has the turn, and
+    // leaving the controls live would just race it.
+    const auto = Boolean(me?.ai);
+    $('lock').classList.toggle('hidden', state.phase !== 'place' || auto);
     $('lock').disabled = !state.pending || me?.locked;
     $('lock').textContent = me?.locked ? 'Locked in' : 'Lock it in';
     // Placing is what counts; locking only ends the turn early. Say so, because "no tile
     // on the board when the timer ends" is a forfeited placement.
-    $('place-hint').textContent = me?.locked
-      ? 'Waiting for the others.'
-      : state.pending
-        ? 'Placed. It locks in automatically when the timer runs out.'
-        : 'Pick a tile, then click a square. No tile placed = no tile this turn.';
+    $('place-hint').textContent = auto
+      ? me?.locked
+        ? 'The computer has placed for you.'
+        : 'The computer is thinking…'
+      : me?.locked
+        ? 'Waiting for the others.'
+        : state.pending
+          ? 'Placed. It locks in automatically when the timer runs out.'
+          : 'Pick a tile, then click a square. No tile placed = no tile this turn.';
     $('place-hint').classList.toggle('hidden', state.phase !== 'place');
   }
   $('join-url').textContent = `Others join at ${location.origin}`;
@@ -317,14 +324,21 @@ function renderLobby() {
   const me = state.players.find((p) => p.id === you);
   const withDogs = state.players.filter((p) => p.dogId).length;
   renderRoundPicker(Boolean(me?.isHost));
+  renderBotPicker(Boolean(me?.isHost));
+  renderAutopilot(me);
 
   $('lobby-players').innerHTML = state.players
-    .map(
-      (p) =>
+    .map((p) => {
+      // Say who is choosing the placements, so a seat on autopilot is never mistaken for
+      // a person who has gone quiet.
+      const tier = state.config.difficulties?.find((d) => d.id === p.ai)?.label ?? p.ai;
+      const tag = p.isBot ? ` · ${tier}` : p.ai ? ` · auto (${tier})` : '';
+      return (
         `<div class="lp"><span class="swatch" style="background:${DOG_COLORS.get(p.dogId) ?? '#3a3f47'}"></span>` +
-        `<span class="pname">${escapeHtml(p.name)}</span>` +
-        `<span class="pdog">${p.dogId ? escapeHtml(dogName(p.dogId)) : 'choosing…'}</span></div>`,
-    )
+        `<span class="pname">${escapeHtml(p.name)}${p.isBot ? ' 🤖' : ''}</span>` +
+        `<span class="pdog">${p.dogId ? escapeHtml(dogName(p.dogId)) : 'choosing…'}${escapeHtml(tag)}</span></div>`
+      );
+    })
     .join('');
 
   // The host's seat is empty and I am not in it — the room cannot be started until someone
@@ -362,7 +376,7 @@ function renderPlayers() {
     row.className = 'player' + (p.id === you ? ' me' : '') + (p.connected ? '' : ' gone');
     row.innerHTML = `
       <span class="swatch" style="background:${DOG_COLORS.get(p.dogId) ?? '#666'}"></span>
-      <span class="pname">${escapeHtml(p.name)}</span>
+      <span class="pname">${escapeHtml(p.name)}${p.isBot ? ' 🤖' : p.ai ? ' ⚙️' : ''}</span>
       <span class="pdog">${escapeHtml(dogName(p.dogId))}</span>
       <span class="pscore">${p.matchScore}${state.phase === 'score' || state.phase === 'match-end' ? ` (+${p.roundScore})` : ''}</span>
       <span class="plock">${p.locked ? '✓' : ''}</span>`;
@@ -430,6 +444,91 @@ function renderRoundPicker(isHost) {
   const label = document.createElement('span');
   label.className = 'hint';
   label.textContent = `${state.config.roundsPerMatch} round${state.config.roundsPerMatch > 1 ? 's' : ''}`;
+  el.appendChild(label);
+}
+
+/**
+ * Adding and removing computer opponents. Host's call, between matches.
+ *
+ * The tiers come from the server rather than being listed here, so the lobby can never
+ * offer a difficulty the search cannot actually play.
+ */
+function renderBotPicker(isHost) {
+  const wrap = $('host-bots');
+  if (!wrap) return;
+  wrap.classList.toggle('hidden', !isHost);
+  if (!isHost) return;
+
+  const el = $('bots');
+  const tiers = state.config.difficulties ?? [];
+  const bots = state.players.filter((p) => p.isBot);
+  const full = state.players.length >= 8;
+  el.innerHTML = '';
+
+  for (const tier of tiers) {
+    const b = document.createElement('button');
+    b.className = 'tile';
+    b.textContent = `+ ${tier.label}`;
+    b.disabled = full;
+    b.onclick = () => send({ t: 'addBot', difficulty: tier.id });
+    el.appendChild(b);
+  }
+  if (bots.length) {
+    const remove = document.createElement('button');
+    remove.className = 'tile';
+    remove.textContent = `− Remove`;
+    remove.onclick = () => send({ t: 'removeBot', playerId: bots[bots.length - 1].id });
+    el.appendChild(remove);
+  }
+
+  const label = document.createElement('span');
+  label.className = 'hint';
+  label.textContent = full
+    ? '8 is the limit — opponents take a seat like anyone else.'
+    : bots.length
+      ? `${bots.length} opponent${bots.length > 1 ? 's' : ''}`
+      : 'none';
+  el.appendChild(label);
+}
+
+/**
+ * Hand your own dog to the computer, or take it back.
+ *
+ * Available to every player, not just the host: it is your dog. With every seat on
+ * autopilot nobody has anything left to place, so the match plays itself and the room
+ * becomes something to watch.
+ */
+function renderAutopilot(me) {
+  const wrap = $('autopilot');
+  if (!wrap) return;
+  wrap.classList.toggle('hidden', !me?.dogId);
+  if (!me?.dogId) return;
+
+  const el = $('autopilot-picks');
+  el.innerHTML = '';
+
+  const mine = document.createElement('button');
+  mine.className = 'tile' + (me.ai ? '' : ' sel');
+  mine.textContent = 'I play';
+  mine.onclick = () => send({ t: 'setAutopilot', difficulty: null });
+  el.appendChild(mine);
+
+  for (const tier of state.config.difficulties ?? []) {
+    const b = document.createElement('button');
+    b.className = 'tile' + (me.ai === tier.id ? ' sel' : '');
+    b.textContent = tier.label;
+    b.onclick = () => send({ t: 'setAutopilot', difficulty: tier.id });
+    el.appendChild(b);
+  }
+
+  const humans = state.players.filter((p) => p.dogId && !p.ai).length;
+  const label = document.createElement('span');
+  label.className = 'hint';
+  label.textContent = !me.ai
+    ? 'or let the computer play it'
+    : humans === 0
+      ? 'watching — nobody is placing tiles'
+      : 'the computer is playing your dog';
   el.appendChild(label);
 }
 

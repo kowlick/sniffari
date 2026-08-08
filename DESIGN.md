@@ -557,6 +557,73 @@ The player who starts the game runs it:
 The confirmation is inline rather than a browser `confirm()`, which phones handle poorly and
 some block outright.
 
+- **Add a computer opponent** — in the lobby, at a chosen difficulty. See §7.2a.
+- **Claim host** — not a host control at all, but its counterpart: available to *any*
+  player once the host's connection has been gone longer than `CONFIG.lobby.hostGraceMs`.
+  Everything above is host-only, so a host who closes their tab leaves a room nobody can
+  start. The server cannot tell that someone has left, only that their socket shut, which
+  is why there is a grace period and a heartbeat rather than an instant handover.
+
+## 7.2a Computer opponents
+
+Opponents take a seat and a dog like anyone else. Eight is still the limit, and the board
+size still follows the number of dogs, so a match against five bots is played on the same
+board five friends would get — player density is held constant whoever is holding the leads.
+
+**The design rests on one measurement.** `simulateWalk` is pure and costs 0.036 ms on the
+small board, 0.140 ms on the large one, and a turn only ever offers 250–785 legal
+placements. Scoring *every* legal placement by simulating the round it produces therefore
+costs about a tenth of a second. A bot needs no heuristic evaluation function, because it
+can afford to ask the real rules what each option actually does.
+
+That is why even the weakest tier is strategic. It is not guessing and then dressing the
+guess up — it is choosing between outcomes it has watched play out. The ladder is about how
+much of the *rest* of the game each tier models, not about whether it understands the board.
+
+| tier | search | λ | character |
+|---|---|---|---|
+| Pup | samples 45% of the board, picks softmax-weighted | 0 | every move considered, but short-sighted and unaware of you |
+| Scout | every legal placement, takes the best | 0.25 | solid, and starts to weigh what it costs everyone else |
+
+λ weighs opponents' mean score against the bot's own, and is what makes the tiers feel like
+different players rather than the same player with sharper eyesight: at 0 the bot does not
+know you exist; above 0 it will give up points of its own to take more away from the table.
+Opponents are averaged rather than maxed, because fixating on whoever leads makes a bot that
+ignores the board to chase one player.
+
+Both tiers are one-ply. What that cannot do is **chain** — turn right here so the jump over
+there lands on the treat. Five tiles are a route, not five independent nudges, and expressing
+that needs a beam search over the remaining turns.
+
+Two constraints that are easy to break by accident:
+
+- **Bots must not be able to cheat, and the risk is real.** A bot runs inside the server
+  where `secretTiles` and every player's `pending` sit in scope, and a bot that read either
+  would be undetectable from outside. So the search never receives a `Room`. It receives a
+  `BotView`, built from nothing but the `state` message that seat's browser was already
+  going to get. If a human cannot see it, it is not in the payload, so it cannot reach the
+  search — structural rather than a rule to remember. `test/ai.test.ts` fails if that stops
+  being true.
+- **Bots go through `place()` and `lock()`**, the same methods a human's socket message
+  reaches. No privileged path, so legality, the collision-into-scuff rule and the turn timer
+  apply to them by construction.
+
+The whole bot team shares `CONFIG.ai.turnBudgetMs` (3 s of a 30 s turn), split by difficulty
+and yielded to the event loop throughout. Shared rather than per bot: the server has one
+thread, and seven opponents each taking a second would freeze every human's board while they
+thought.
+
+**Autopilot.** Any player can hand their own dog to the computer and take it back, mid-match
+included. It is self-only — nobody else decides who plays your dog. With every seat on
+autopilot nobody has anything left to place and the match plays itself, which is the way to
+just watch: put the board view on a TV and let the dogs get on with it.
+
+`npm run ai-tourney` plays the tiers against each other over many seeded rounds, swapping
+start slots halfway so a lucky seat cannot flatter one of them. Until it says the ladder
+orders, "Scout is stronger than Pup" is a claim about code rather than a fact about play.
+It currently reports Scout winning 80% of decisive rounds on the small board, averaging
+11.4 points to 5.25.
+
 ## 7.3 Sound
 
 Everything is synthesised with Web Audio; there are no audio files. That keeps the game
