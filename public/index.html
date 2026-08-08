@@ -83,6 +83,9 @@
           </div>
           <p id="lobby-hint" class="hint"></p>
           <button id="lobby-start" class="primary hidden">Start the match</button>
+          <!-- Only ever visible when the host's seat is actually empty. Without it a lobby
+               whose host closed their tab can never be started by anyone. -->
+          <button id="claim-host" class="claim hidden">Claim host</button>
         </div>
       </div>
     </div>

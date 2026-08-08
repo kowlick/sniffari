@@ -97,7 +97,31 @@ const server = createServer((req, res) => {
 
 const wss = new WebSocketServer({ server });
 
+/**
+ * Liveness, so `connected: false` is worth something.
+ *
+ * A closed tab sends a FIN and 'close' fires immediately. A phone that leaves the Wi-Fi,
+ * goes flat, or is carried out of the house sends nothing, and the socket sits there
+ * looking open until the OS TCP timeout — minutes. That is exactly the case where the host
+ * has left and the room needs to notice, so we ping and hang up on anyone who misses two.
+ */
+const alive = new WeakSet<WebSocket>();
+
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!alive.has(ws)) {
+      ws.terminate(); // fires 'close', which drops the connection from the room
+      continue;
+    }
+    alive.delete(ws);
+    ws.ping();
+  }
+}, CONFIG.lobby.heartbeatMs);
+heartbeat.unref();
+
 wss.on('connection', (ws: WebSocket) => {
+  alive.add(ws);
+  ws.on('pong', () => alive.add(ws));
   const conn: Connection = {
     send: (msg: ServerMessage) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -107,6 +131,7 @@ wss.on('connection', (ws: WebSocket) => {
   const fail = (message: string) => conn.send({ t: 'error', message });
 
   ws.on('message', (raw) => {
+    alive.add(ws); // traffic is proof of life too, not just pongs
     let msg: ClientMessage;
     try {
       msg = JSON.parse(String(raw));
@@ -141,6 +166,8 @@ wss.on('connection', (ws: WebSocket) => {
               return room.pickDog(id, msg.dogId);
             case 'start':
               return room.start(id);
+            case 'claimHost':
+              return room.claimHost(id);
             case 'setRounds':
               return room.setRounds(id, msg.rounds);
             case 'endMatch':

@@ -109,6 +109,26 @@ export const CONFIG = {
      * route-optimisation puzzle against the board.
      */
     minPlayers: 1,
+    /**
+     * How long the host's seat stays theirs after their socket drops, before anyone else
+     * may claim it. Only the *host* is gated this way — a lobby whose host closed the tab
+     * is unstartable, and there is nobody with authority to fix it, so the fix has to be
+     * available to whoever is still in the room.
+     *
+     * Long enough to cover a page reload or a phone unlocking (both reconnect in about a
+     * second), short enough that a room whose host actually walked away is not stuck for a
+     * whole round. See heartbeatMs — a host who leaves the Wi-Fi is not detected until the
+     * heartbeat gives up on them, and that wait comes *before* this one.
+     */
+    hostGraceMs: 15_000,
+    /**
+     * WebSocket ping interval. A closed tab sends a TCP FIN and we hear about it at once,
+     * but a phone that leaves Wi-Fi or goes flat says nothing at all — without a heartbeat
+     * that socket stays "open" until the OS TCP timeout, which is minutes. Two missed
+     * pings (2 x this) and the connection is terminated, which is what makes
+     * `connected: false` mean something.
+     */
+    heartbeatMs: 8_000,
   },
 } as const;
 

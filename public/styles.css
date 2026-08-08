@@ -252,6 +252,23 @@ button.quiet-danger:hover {
 button.quiet-danger.far {
   margin-top: 22px;
 }
+/* Small and quiet: it only appears when the host's seat is empty, and taking it is a
+   housekeeping act, not the thing you came to the lobby to do. */
+button.claim {
+  display: block;
+  margin: 10px auto 0;
+  padding: 5px 12px;
+  font-size: 12px;
+  background: none;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  width: auto;
+}
+button.claim:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}
 button.icon {
   padding: 4px 8px;
   font-size: 18px;

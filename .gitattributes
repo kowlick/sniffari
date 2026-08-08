@@ -1,0 +1,8 @@
+# cmd.exe mis-parses a batch file with bare LF endings - it printed errors for
+# lines it had split in the wrong place. Pin them to CRLF so a clone on any
+# machine gets a working restart.bat.
+*.bat text eol=crlf
+
+# Binary art. Never touch these.
+*.png binary
+*.jpg binary

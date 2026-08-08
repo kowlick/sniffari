@@ -75,6 +75,18 @@ room codes and no registry. It holds two tile maps: `tiles` (public) and `secret
 serialize `secretTiles`. Clients learn about secret tiles only from `reveal` events inside
 the walk payload, at the tick a dog steps on one.
 
+**The host seat is claimable, because there is no admin to fix a room.** Starting a match,
+setting its length and ending it early are host-only, so a host who closes their tab leaves
+a lobby nobody can start. The server cannot know that someone *left* — only that their
+socket shut — so `Room` publishes `hostAway` once the host's connection has been gone for
+`CONFIG.lobby.hostGraceMs`, and any player may then send `claimHost`. Two things make that
+work and are easy to break: the WebSocket **ping/pong heartbeat** in `index.ts`, without
+which a phone that leaves the Wi-Fi looks connected for minutes of TCP timeout; and the
+timer in `markHostAway`, which broadcasts when the grace expires — nothing else would wake
+an idle lobby, and a claim button that only appears on the next unrelated state change is a
+button nobody finds. Mid-match needs no button: the phase timers run the match out to
+`match-end` on their own, and the lobby overlay comes back with the claim button on it.
+
 **`public/` — rendering only.** The client sends one message per turn and otherwise just
 draws what it is told. It never simulates. `client.js` owns the socket, the DOM and
 playback; `render.js` lays out the board; `sprites.js` holds every piece of artwork;
@@ -94,9 +106,15 @@ column = `direction * 4 + frame`, row = breed in `DOGS` order). `public/atlas.js
 loading and anchored cell drawing — `foot` for characters, `bottom` for tall props that
 overhang the tile behind, `tile` for flat decals. See `art/` for the specs.
 
-The procedural sprites in `sprites.js` are still the fallback if the sheet fails to load, and
-`?art=drawn` forces them. Everything else — terrain, props, tiles, effects — is still drawn
-procedurally in a normalised [-0.5, 0.5] tile space, so it scales to any board size.
+**Animated board entities share a second atlas** (`public/art/entities-chibi.png`, 16×5
+cells of 128×256). Rows are hydrant, lamppost, bush, squirrel tree and lake/drain effects;
+columns are four-frame state blocks. `art/chibi-entities/ENTITY_HANDOFF.md` is the row and
+state contract. All cells use the same 0.85 foot line, including flat props whose art lives
+near the bottom of the tall transparent cell.
+
+The procedural sprites in `sprites.js` are still the fallback if a sheet fails to load, and
+`?art=drawn` forces them. Terrain, player tiles and remaining effects are drawn procedurally
+in a normalised [-0.5, 0.5] tile space, so they scale to any board size.
 
 Dog metadata comes from `DOGS` in `protocol.ts`, served via `/dogs.json` so it cannot drift
 from the server's list. **The atlas row is the array index**, so reordering `DOGS` silently

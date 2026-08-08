@@ -16,8 +16,13 @@ export const DOG_CELL = 128;
 const DOG_SHEET_URL = '/art/dogs-chibi.png';
 export const PEOPLE_CELL_WIDTH = 128;
 export const PEOPLE_CELL_HEIGHT = 256;
+export const ENTITY_CELL_WIDTH = 128;
+export const ENTITY_CELL_HEIGHT = 256;
 const PEOPLE_COUNT = 8;
+const STROLLER_PERSON_ROW = 5;
+const PERSON_SCALE = 0.72;
 const PEOPLE_SHEET_URL = '/art/people-chibi.png';
+const ENTITY_SHEET_URL = '/art/entities-chibi.png';
 /**
  * A walk cycle from the four supplied poses: step A, passing, step B, passing. Frame 0 is
  * the neutral stand and is reserved for dogs that are not moving.
@@ -28,6 +33,7 @@ const WALK_FRAMES = [1, 2, 3, 2];
 const useAtlas = new URLSearchParams(location.search).get('art') !== 'drawn';
 export const dogSheet = useAtlas ? loadSheet(DOG_SHEET_URL) : { ready: false, failed: true };
 export const peopleSheet = useAtlas ? loadSheet(PEOPLE_SHEET_URL) : { ready: false, failed: true };
+export const entitySheet = useAtlas ? loadSheet(ENTITY_SHEET_URL) : { ready: false, failed: true };
 
 /**
  * Per-cell bounding boxes and per-breed average figure height, measured from the sheet.
@@ -272,10 +278,33 @@ export function drawFence(ctx, px, py, s, vertical) {
 
 // --- pickups and stopping points -----------------------------------------------------------
 
-export function drawSniff(ctx, px, py, s, x, y, spent) {
+const SNIFF_STATE = { fresh: 0, sniffed: 1, spent: 2, reaction: 3 };
+
+function drawEntityCell(ctx, row, column, px, py, s) {
+  return drawCell(
+    ctx,
+    entitySheet,
+    {
+      sx: column * ENTITY_CELL_WIDTH,
+      sy: row * ENTITY_CELL_HEIGHT,
+      sw: ENTITY_CELL_WIDTH,
+      sh: ENTITY_CELL_HEIGHT,
+    },
+    px,
+    py,
+    s,
+    { anchor: 'foot', footRatio: 0.85 },
+  );
+}
+
+export function drawSniff(ctx, px, py, s, x, y, state = 'fresh', frame = 0) {
   const kind = hash(x, y) % 3;
+  const stateIndex = SNIFF_STATE[state] ?? 0;
+  const column = stateIndex * 4 + (Math.floor(frame) % 4 + 4) % 4;
+  if (drawEntityCell(ctx, kind, column, px, py, s)) return;
+
   inTile(ctx, px, py, s, () => {
-    ctx.globalAlpha = spent ? 0.4 : 1;
+    ctx.globalAlpha = state === 'spent' ? 0.4 : state === 'sniffed' ? 0.72 : 1;
     const W = 0.05;
     if (kind === 0) {
       // Fire hydrant.
@@ -310,6 +339,9 @@ export function drawPerson(ctx, px, py, s, x, y, state = 'idle', frame = 0) {
   const stateIndex = { idle: 0, giving: 1, given: 2 }[state] ?? 0;
   const column = stateIndex * 4 + (Math.floor(frame) % 4 + 4) % 4;
   const row = hash(x, y) % PEOPLE_COUNT;
+  // Dogs are the stars of the board. Keep ordinary people clearly smaller than a dog;
+  // the parent-and-pram silhouette was already the right overall footprint, so preserve it.
+  const scale = row === STROLLER_PERSON_ROW ? 1 : PERSON_SCALE;
   if (
     drawCell(
       ctx,
@@ -323,7 +355,7 @@ export function drawPerson(ctx, px, py, s, x, y, state = 'idle', frame = 0) {
       px,
       py,
       s,
-      { anchor: 'foot', footRatio: 0.85 },
+      { anchor: 'foot', footRatio: 0.85, scale },
     )
   )
     return;
@@ -348,7 +380,9 @@ export function drawPerson(ctx, px, py, s, x, y, state = 'idle', frame = 0) {
   });
 }
 
-export function drawSquirrel(ctx, px, py, s) {
+export function drawSquirrel(ctx, px, py, s, frame = 0) {
+  if (drawEntityCell(ctx, 3, Math.max(0, Math.min(15, Math.floor(frame))), px, py, s)) return;
+
   inTile(ctx, px, py, s, () => {
     const W = 0.05;
     ink(ctx, '#8a5f3c', W, () => roundPath(ctx, 0, 0.16, 0.16, 0.34, 0.05)); // trunk
@@ -370,7 +404,14 @@ export function drawSquirrel(ctx, px, py, s) {
   });
 }
 
-export function drawDrain(ctx, px, py, s) {
+export function drawLake(ctx, px, py, s, frame = 0) {
+  // The atlas lake is an overlay: drawGround still supplies the full blue water tile.
+  if (drawEntityCell(ctx, 4, Math.max(0, Math.min(7, Math.floor(frame))), px, py, s)) return;
+}
+
+export function drawDrain(ctx, px, py, s, frame = 8) {
+  if (drawEntityCell(ctx, 4, Math.max(8, Math.min(15, Math.floor(frame))), px, py, s)) return;
+
   inTile(ctx, px, py, s, () => {
     const W = 0.05;
     ink(ctx, '#4a515c', W, () => roundPath(ctx, 0, 0, 0.66, 0.44, 0.07));

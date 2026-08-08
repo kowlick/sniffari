@@ -12,6 +12,11 @@ Everything below is drawn today as procedural canvas art, so nothing here is blo
 is a list of what would be *replaced or extended*, ordered by how much each would improve the
 board.
 
+> **Implementation status (August 2026):** the people cast and all entities in section 1
+> now have transparent runtime atlases and event-driven animation. See
+> `chibi-entities/HANDOFF.md` for people and `chibi-entities/ENTITY_HANDOFF.md` for sniff
+> spots, squirrel, lake and drain. Procedural art remains as the loading/failure fallback.
+
 ---
 
 ## 1. Pickups and stopping points — the highest-value work

@@ -7,6 +7,7 @@ import {
   drawDrain,
   drawFence,
   drawGround,
+  drawLake,
   drawPerson,
   drawPlacedTile,
   drawSniff,
@@ -17,8 +18,8 @@ const WALL = '#';
 const key = (x, y) => `${x},${y}`;
 const personPhase = (x, y) => ((x * 3 + y * 5) % 4 + 4) % 4;
 
-/** Loop one of the four atlas frames without making every person move in sync. */
-function personLoopFrame(now, fps, x, y) {
+/** Loop one of four atlas frames without making every entity on the board move in sync. */
+function loopFrame(now, fps, x, y) {
   return (Math.floor(now / (1000 / fps)) + personPhase(x, y)) % 4;
 }
 
@@ -95,6 +96,9 @@ export function draw(canvas, view) {
   // A dog collecting a treat stands on the same tile as the person handing it over, so for
   // a moment they step apart — person left, dog right — with the treat between them.
   const exchange = (x, y) => view.exchanges?.find((e) => e.x === x && e.y === y);
+  const sniffReaction = (x, y) => view.sniffReactions?.find((e) => e.x === x && e.y === y);
+  const stopReaction = (x, y, reason) =>
+    view.stopReactions?.find((e) => e.x === x && e.y === y && e.reason === reason);
   /** Sideways offset in tiles, out and back over the life of the exchange. */
   const nudge = (e) => (e ? Math.sin(Math.min(1, e.age) * Math.PI) * 0.2 : 0);
 
@@ -102,7 +106,20 @@ export function draw(canvas, view) {
     for (let x = 0; x < map.width; x++) {
       const ch = at(x, y);
       const k = key(x, y);
-      if (ch === 'S') drawSniff(ctx, x * s, y * s, s, x, y, view.spent?.has(k));
+      if (ch === 'S') {
+        const reaction = sniffReaction(x, y);
+        const state = reaction
+          ? 'reaction'
+          : view.spent?.has(k)
+            ? 'spent'
+            : view.sniffed?.has(k)
+              ? 'sniffed'
+              : 'fresh';
+        const frame = reaction
+          ? Math.min(3, Math.floor(reaction.age * 4))
+          : loopFrame(view.animationMs ?? 0, 5, x, y);
+        drawSniff(ctx, x * s, y * s, s, x, y, state, frame);
+      }
       else if (ch === 'P') {
         const e = exchange(x, y);
         // Lean in as well as step aside: a little bigger reads as offering the treat.
@@ -118,11 +135,30 @@ export function draw(canvas, view) {
         // loops, with a per-tile phase offset so a crowd never bobs in lockstep.
         const frame = e
           ? Math.min(3, Math.floor(e.age * 4))
-          : personLoopFrame(view.animationMs ?? 0, state === 'given' ? 5 : 6, x, y);
+          : loopFrame(view.animationMs ?? 0, state === 'given' ? 5 : 6, x, y);
         drawPerson(ctx, x * s, y * s, s, x, y, state, frame);
         ctx.restore();
-      } else if (ch === 'Q') drawSquirrel(ctx, x * s, y * s, s);
-      else if (ch === 'D') drawDrain(ctx, x * s, y * s, s);
+      } else if (ch === 'Q') {
+        const reaction = stopReaction(x, y, 'squirrel');
+        let frame;
+        if (!reaction) frame = loopFrame(view.animationMs ?? 0, 6, x, y);
+        else if (reaction.age < 0.55)
+          frame = 4 + Math.min(7, Math.floor((reaction.age / 0.55) * 8));
+        else frame = 12 + Math.min(3, Math.floor(((reaction.age - 0.55) / 0.45) * 4));
+        drawSquirrel(ctx, x * s, y * s, s, frame);
+      } else if (ch === '~') {
+        const reaction = stopReaction(x, y, 'lake');
+        const frame = reaction
+          ? 4 + Math.min(3, Math.floor(reaction.age * 4))
+          : loopFrame(view.animationMs ?? 0, 4, x, y);
+        drawLake(ctx, x * s, y * s, s, frame);
+      } else if (ch === 'D') {
+        const reaction = stopReaction(x, y, 'drain');
+        const frame = reaction
+          ? 12 + Math.min(3, Math.floor(reaction.age * 4))
+          : 8 + loopFrame(view.animationMs ?? 0, 2, x, y);
+        drawDrain(ctx, x * s, y * s, s, frame);
+      }
     }
   }
 

@@ -71,6 +71,14 @@ export class Room {
   players = new Map<string, Player>();
   spectators = new Set<Connection>();
   hostId: string | null = null;
+  /**
+   * Epoch ms when the host's connection dropped, or null while they are here. Once this is
+   * older than `hostGraceMs` anyone else may take the seat — see `claimHost`. Public so a
+   * test can backdate it rather than sleeping out the grace period.
+   */
+  hostAwaySince: number | null = null;
+  /** Fires once when the grace expires, purely so the claim button appears unprompted. */
+  private hostTimer: NodeJS.Timeout | null = null;
 
   phase: Phase = 'lobby';
   round = 0;
@@ -126,7 +134,10 @@ export class Room {
       seat: this.players.size,
     };
     this.players.set(player.id, player);
-    this.hostId ??= player.id;
+    if (this.hostId === null) {
+      this.hostId = player.id;
+      this.hostAwaySince = null;
+    }
     return player;
   }
 
@@ -135,14 +146,66 @@ export class Room {
     const player = [...this.players.values()].find((p) => p.token === token);
     if (!player) return { error: 'We do not recognise that session.' };
     player.conn = conn;
+    // Back inside the grace window, so the seat was never actually up for grabs. A host who
+    // reloads the page keeps the room; one who was claimed while away does not get it back.
+    if (player.id === this.hostId) this.markHostPresent();
     return player;
   }
 
   dropConnection(conn: Connection) {
     this.spectators.delete(conn);
-    for (const p of this.players.values()) if (p.conn === conn) p.conn = null;
+    for (const p of this.players.values()) {
+      if (p.conn !== conn) continue;
+      p.conn = null;
+      if (p.id === this.hostId) this.markHostAway();
+    }
     // A player who drops mid-placement forfeits that turn on the timer; nothing stalls.
     this.broadcast();
+  }
+
+  // --- the host seat -----------------------------------------------------------------
+
+  /**
+   * Is the host's seat currently open? True when nobody holds it, or when the holder's
+   * socket has been gone longer than the grace period.
+   *
+   * This is the whole answer to "how do we know the host left": we do not, and cannot —
+   * we only know their socket is shut. A closed tab reports that immediately; a phone that
+   * walked out of range reports it once the heartbeat in index.ts gives up pinging. Either
+   * way the room asks the people still in it rather than guessing.
+   */
+  get hostAway(): boolean {
+    if (this.hostId === null || !this.players.has(this.hostId)) return true;
+    return this.hostAwaySince !== null && Date.now() - this.hostAwaySince >= CONFIG.lobby.hostGraceMs;
+  }
+
+  /** Take the empty host seat. Anyone in the room may, which is the point. */
+  claimHost(playerId: string): string | null {
+    const player = this.players.get(playerId);
+    if (!player) return 'Unknown player.';
+    if (playerId === this.hostId) return 'You are already the host.';
+    if (!this.hostAway) return 'The host is still here.';
+    this.hostId = playerId;
+    this.markHostPresent();
+    this.broadcast();
+    return null;
+  }
+
+  private markHostAway() {
+    this.hostAwaySince = Date.now();
+    if (this.hostTimer) clearTimeout(this.hostTimer);
+    // Nothing else would wake the room when the grace runs out, and a claim button that
+    // only appears on the next unrelated state change is a button nobody finds.
+    this.hostTimer = setTimeout(() => {
+      this.hostTimer = null;
+      this.broadcast();
+    }, CONFIG.lobby.hostGraceMs).unref();
+  }
+
+  private markHostPresent() {
+    this.hostAwaySince = null;
+    if (this.hostTimer) clearTimeout(this.hostTimer);
+    this.hostTimer = null;
   }
 
   pickDog(playerId: string, dogId: string): string | null {
@@ -455,6 +518,7 @@ export class Room {
       turn: this.turn,
       deadline: this.deadline,
       players,
+      hostAway: this.hostAway,
       tiles,
       dogs: this.dogs,
       pending: p?.pending ?? null,

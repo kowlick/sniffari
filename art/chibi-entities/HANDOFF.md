@@ -99,7 +99,11 @@ footRatio = 0.85
 source cell = 128 x 256
 ```
 
-With the repository's `drawCell()` helper, preserve the cell aspect ratio: the displayed person is one tile wide and two tiles high, with the foot point planted on the normal entity ground line. A representative lookup is:
+With the repository's `drawCell()` helper, preserve the cell aspect ratio and plant the foot
+point on the normal entity ground line. The atlas cell itself is one tile wide and two tiles
+high. At runtime `drawPerson()` scales ordinary people to **0.72** so dogs remain the visual
+focus; atlas row 5, the parent-and-pram silhouette, stays at **1.0** because its overall
+footprint was already correct. A representative lookup is:
 
 ```js
 const stateIndex = { idle: 0, giving: 1, given: 2 }[state];

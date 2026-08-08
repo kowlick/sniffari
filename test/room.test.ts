@@ -151,3 +151,76 @@ test('solo is allowed to start', async () => {
   assert.equal(room.start(ada.id), null);
   assert.notEqual(room.phase, 'lobby');
 });
+
+// --- the host seat ------------------------------------------------------------------
+
+/**
+ * A lobby whose host closed their tab is unstartable, and nobody in it has the authority
+ * to fix that — so the seat has to become claimable. The grace period is what keeps a host
+ * who merely reloaded the page from losing the room.
+ */
+test('the host seat opens up once the host has been gone past the grace period', async () => {
+  const room = new Room(await boards());
+  // Distinct connections: dropConnection matches by identity, and the shared `silent`
+  // would drop everybody at once.
+  const hostConn: Connection = { send() {} };
+  const guestConn: Connection = { send() {} };
+  const host = room.addPlayer('Ada', hostConn) as { id: string };
+  const guest = room.addPlayer('Bo', guestConn) as { id: string };
+  assert.equal(room.pickDog(host.id, 'beagle'), null);
+  assert.equal(room.pickDog(guest.id, 'labrador'), null);
+  assert.equal(room.hostId, host.id, 'first in the door hosts');
+  assert.equal(room.hostAway, false);
+
+  room.dropConnection(hostConn);
+  assert.equal(room.hostAway, false, 'a socket that just dropped is still within grace');
+  assert.match(room.claimHost(guest.id) ?? '', /still here/i);
+  assert.equal(room.hostId, host.id);
+
+  room.hostAwaySince = Date.now() - CONFIG.lobby.hostGraceMs - 1;
+  assert.equal(room.hostAway, true);
+  assert.equal(room.claimHost(guest.id), null, 'anyone left in the room may take over');
+  assert.equal(room.hostId, guest.id);
+  assert.equal(room.hostAway, false, 'and the seat is filled again');
+  assert.equal(room.start(guest.id), null, 'which is the whole point — the game can start');
+});
+
+test('a host who reconnects inside the grace period keeps the room', async () => {
+  const room = new Room(await boards());
+  const hostConn: Connection = { send() {} };
+  const host = room.addPlayer('Ada', hostConn) as { id: string; token: string };
+  room.addPlayer('Bo', { send() {} });
+
+  room.dropConnection(hostConn);
+  assert.ok(room.hostAwaySince !== null);
+  const back: Connection = { send() {} };
+  assert.ok(!('error' in room.rejoin(host.token, back)), 'rejoin by token works');
+  assert.equal(room.hostAwaySince, null, 'the clock is cleared');
+  assert.equal(room.hostId, host.id);
+  assert.equal(room.hostAway, false);
+});
+
+test('a claimed room is not handed back when the old host returns', async () => {
+  const room = new Room(await boards());
+  const hostConn: Connection = { send() {} };
+  const host = room.addPlayer('Ada', hostConn) as { id: string; token: string };
+  const guest = room.addPlayer('Bo', { send() {} }) as { id: string };
+
+  room.dropConnection(hostConn);
+  room.hostAwaySince = Date.now() - CONFIG.lobby.hostGraceMs - 1;
+  assert.equal(room.claimHost(guest.id), null);
+
+  assert.ok(!('error' in room.rejoin(host.token, { send() {} })));
+  assert.equal(room.hostId, guest.id, 'the seat stays with whoever picked it up');
+  assert.match(room.start(host.id) ?? '', /host/i);
+  assert.equal(room.claimHost(host.id) ?? '', 'The host is still here.');
+});
+
+test('claiming is refused while the host is present, and is a no-op for the host', async () => {
+  const room = new Room(await boards());
+  const host = seat(room, 'Ada', 'beagle');
+  const guest = seat(room, 'Bo', 'labrador');
+  assert.match(room.claimHost(guest.id) ?? '', /still here/i);
+  assert.match(room.claimHost(host.id) ?? '', /already the host/i);
+  assert.equal(room.hostId, host.id);
+});

@@ -29,9 +29,14 @@ The board size is chosen by how many of you there are: 10×10 for 2–3 players,
 
 Node 22.6+ is required — `.ts` files run directly with no build step.
 
+On Windows, `restart.bat` is the quickest way to bounce the server between games: it kills
+whatever node process is holding the port, waits for the port to actually come free, and
+starts a fresh one. Double-click it, or pass a port (`restart.bat 8080`).
+
 | | |
 |---|---|
 | `npm start` | Run the server on port 9663 (`WOOF` on a keypad) |
+| `restart.bat` | Windows: free the port and restart the server |
 | `npm run dev` | Same, restarting on file changes |
 | `npm test` | Run the sim and map test suites |
 | `npm test -- --test-name-pattern "jump"` | Run a single test by name |

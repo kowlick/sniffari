@@ -67,7 +67,9 @@ Column blocks:
 - 4-7: giving
 - 8-11: given / empty / wave
 
-Use `anchor: "foot"` and `footRatio: 0.85` with `drawCell()`. Because each runtime cell is 128 x 256, the person renders one tile wide and two tiles high while planting on the normal ground line.
+Use `anchor: "foot"` and `footRatio: 0.85` with `drawCell()`. Each runtime cell is 128 x
+256. `drawPerson()` renders ordinary people at scale 0.72 so they stay smaller than the
+dogs; row 5 (parent and pram) remains scale 1.0. Both plant on the normal ground line.
 
 ## Transparency cleanup
 

@@ -54,6 +54,11 @@ export type ServerMessage =
       /** Epoch ms when the current phase auto-advances, or null if it does not. */
       deadline: number | null;
       players: PublicPlayer[];
+      /**
+       * The host's seat is empty — nobody holds it, or the holder's socket has been gone
+       * longer than the grace period. Any player may then send `claimHost`.
+       */
+      hostAway: boolean;
       /** Only tiles every player is allowed to see. Secret placements are omitted. */
       tiles: WireTile[];
       dogs: DogSnapshot[];
@@ -97,6 +102,8 @@ export type ClientMessage =
   | { t: 'spectate' }
   | { t: 'pickDog'; dogId: string }
   | { t: 'start' }
+  /** Take the host seat when it is empty. Any player, not host only — that is the point. */
+  | { t: 'claimHost' }
   /** Host only, between matches. */
   | { t: 'setRounds'; rounds: number }
   /** Host only, mid-match. Jumps to the final standings, keeping scores. */

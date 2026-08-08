@@ -1,5 +1,5 @@
 import { cellAt, draw, interpolate } from './render.js';
-import { drawDogPortrait, drawWordmark, dogSheet, peopleSheet } from './sprites.js';
+import { drawDogPortrait, drawWordmark, dogSheet, entitySheet, peopleSheet } from './sprites.js';
 import { whenReady } from './atlas.js';
 import { isMuted, playMusic, setMuted, sfx, stopMusic, unlock } from './audio.js';
 
@@ -18,6 +18,8 @@ let playback = null; // { ticks, tickMs, start, popups }
 let toast = null;
 let lastSecond = -1;
 const TREAT_EXCHANGE_MS = 480;
+const SNIFF_REACTION_MS = 520;
+const STOP_REACTION_MS = { squirrel: 1500, lake: 520, drain: 620 };
 
 const STORE = 'sniffari.session';
 
@@ -155,6 +157,8 @@ function handle(msg) {
       popups: [],
       bursts: [],
       exchanges: [],
+      sniffReactions: [],
+      stopReactions: [],
       seen: -1,
     };
     log('The dogs are off!');
@@ -176,6 +180,7 @@ $('name')?.addEventListener('keydown', (e) => {
 });
 $('start')?.addEventListener('click', () => send({ t: 'start' }));
 $('lobby-start')?.addEventListener('click', () => send({ t: 'start' }));
+$('claim-host')?.addEventListener('click', () => send({ t: 'claimHost' }));
 $('lock')?.addEventListener('click', () => send({ t: 'lock' }));
 
 // Ending a match is destructive and cannot be undone, so it asks first — inline rather
@@ -322,17 +327,24 @@ function renderLobby() {
     )
     .join('');
 
+  // The host's seat is empty and I am not in it — the room cannot be started until someone
+  // takes over, so offer it rather than leaving everyone waiting on a person who left.
+  const canClaim = state.hostAway && !me?.isHost;
+  $('claim-host').classList.toggle('hidden', !canClaim);
+
   // Say exactly what is missing, rather than only refusing on the Start button.
   const min = state.config.minPlayers;
   const hint = !me?.dogId
     ? 'Pick a dog above to join the walk.'
     : withDogs < min
       ? `Waiting for ${min - withDogs} more (${withDogs} of ${min} ready).`
-      : !me.isHost
-        ? `${withDogs} ready — waiting for the host to start.`
-        : withDogs === 1
-          ? 'Ready. You can start solo, or wait for others to join.'
-          : `${withDogs} dogs ready — start whenever you like.`;
+      : canClaim
+        ? `${withDogs} ready — the host has left. Claim host to start the match.`
+        : !me.isHost
+          ? `${withDogs} ready — waiting for the host to start.`
+          : withDogs === 1
+            ? 'Ready. You can start solo, or wait for others to join.'
+            : `${withDogs} dogs ready — start whenever you like.`;
   $('lobby-hint').textContent = hint;
 
   const canStart = Boolean(me?.isHost) && withDogs >= min;
@@ -601,6 +613,8 @@ function frame(now) {
   let popups = [];
   let bursts = [];
   let exchanges = [];
+  let sniffReactions = [];
+  let stopReactions = [];
   // Idle dogs breathe and wag slowly; walking dogs take one leg cycle per tick, so the
   // gait lands exactly on each tile.
   let gait = (now / 1400) % 1;
@@ -643,11 +657,29 @@ function frame(now) {
       : [];
     if (playback)
       playback.exchanges = playback.exchanges.filter((e) => now - e.born < TREAT_EXCHANGE_MS);
+    sniffReactions = playback
+      ? playback.sniffReactions
+          .map((e) => ({ ...e, age: (now - e.born) / SNIFF_REACTION_MS }))
+          .filter((e) => e.age < 1)
+      : [];
+    if (playback)
+      playback.sniffReactions = playback.sniffReactions.filter(
+        (e) => now - e.born < SNIFF_REACTION_MS,
+      );
+    stopReactions = playback
+      ? playback.stopReactions
+          .map((e) => ({ ...e, age: (now - e.born) / STOP_REACTION_MS[e.reason] }))
+          .filter((e) => e.age < 1)
+      : [];
+    if (playback)
+      playback.stopReactions = playback.stopReactions.filter(
+        (e) => now - e.born < STOP_REACTION_MS[e.reason],
+      );
   }
 
   // Secret tiles the walk has revealed so far get drawn alongside the public ones, minus
   // any that have already been spent.
-  const { spent, taken, usedTiles } = consumed;
+  const { sniffed, spent, taken, usedTiles } = consumed;
   const tiles = [...state.tiles, ...revealedTiles()].filter((t) => !usedTiles.has(`${t.x},${t.y}`));
   const dogIdOf = (playerId) => state.players.find((p) => p.id === playerId)?.dogId;
 
@@ -664,9 +696,12 @@ function frame(now) {
     popups,
     gait,
     spent,
+    sniffed,
     taken,
     bursts,
     exchanges,
+    sniffReactions,
+    stopReactions,
     animationMs: now,
     colorFor: (playerId) => DOG_COLORS.get(dogIdOf(playerId)) ?? '#8b8c89',
     specFor: (playerId) => DOG_SPECS.get(dogIdOf(playerId)) ?? {},
@@ -709,9 +744,16 @@ const revealedTiles = () => consumed.revealed;
  * playback was dropped — right as the scoring phase began. Cleared when the next round sets
  * up, which is when the server clears the tiles for real.
  */
-const consumed = { spent: new Set(), taken: new Set(), usedTiles: new Set(), revealed: [] };
+const consumed = {
+  sniffed: new Set(),
+  spent: new Set(),
+  taken: new Set(),
+  usedTiles: new Set(),
+  revealed: [],
+};
 
 function resetConsumed() {
+  consumed.sniffed.clear();
   consumed.spent.clear();
   consumed.taken.clear();
   consumed.usedTiles.clear();
@@ -720,7 +762,8 @@ function resetConsumed() {
 
 function recordConsumption(ev) {
   // order 1 is the second dog, after which a sniff spot is worth nothing.
-  if (ev.t === 'sniff' && ev.order >= 1) consumed.spent.add(`${ev.x},${ev.y}`);
+  if (ev.t === 'sniff' && ev.order === 0) consumed.sniffed.add(`${ev.x},${ev.y}`);
+  else if (ev.t === 'sniff' && ev.order >= 1) consumed.spent.add(`${ev.x},${ev.y}`);
   else if (ev.t === 'treat') consumed.taken.add(`${ev.x},${ev.y}`);
   else if (ev.t === 'consume') consumed.usedTiles.add(`${ev.x},${ev.y}`);
   else if (ev.t === 'reveal') consumed.revealed.push({ x: ev.x, y: ev.y, kind: ev.kind, ownerId: null });
@@ -739,6 +782,10 @@ function addPopup(ev, now) {
     // treat is on the person's screen-right, so separating them puts the exchange between
     // them instead of drawing one on top of the other.
     playback.exchanges.push({ x: ev.x, y: ev.y, born: now });
+  }
+  if (ev.t === 'sniff') playback.sniffReactions.push({ x: ev.x, y: ev.y, born: now });
+  if (ev.t === 'stop' && STOP_REACTION_MS[ev.reason]) {
+    playback.stopReactions.push({ x: ev.x, y: ev.y, reason: ev.reason, born: now });
   }
 
   if (ev.t === 'consume') {
@@ -806,7 +853,7 @@ DOG_SPECS = new Map(dogs.map((d) => [d.id, d]));
 // Wait for the character sheets before the first paint, so neither dogs nor people visibly
 // swap from procedural fallbacks after the board appears. Each falls through independently
 // if its file is missing.
-await Promise.all([whenReady(dogSheet), whenReady(peopleSheet)]);
+await Promise.all([whenReady(dogSheet), whenReady(peopleSheet), whenReady(entitySheet)]);
 
 connect(resume);
 requestAnimationFrame(frame);

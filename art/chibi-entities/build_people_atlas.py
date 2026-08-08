@@ -14,6 +14,9 @@ from pathlib import Path
 
 from PIL import Image
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from align_frames import PEOPLE_GROUPS, align_group  # noqa: E402
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOT = Path(
@@ -179,8 +182,17 @@ def build_atlas() -> None:
                 cell = sanitize_alpha(cell)
                 atlas_column = state * 4 + frame
                 atlas.alpha_composite(cell, (atlas_column * 128, cast_row * 256))
+    # Register the frames before saving, for the same reason the entity builder does:
+    # drawCell centres the cell on the tile, never the art, so any per-frame offset inside
+    # the cell is rendered as the person shuffling around their tile. Nobody on this board
+    # walks anywhere, so their feet are the thing that must stay planted.
+    # See art/align_frames.py.
+    atlas = sanitize_alpha(atlas)
+    for row, columns, label in PEOPLE_GROUPS:
+        align_group(atlas, columns, row, ATLAS_CELL[0], ATLAS_CELL[1], label=label)
+
     ATLAS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    sanitize_alpha(atlas).save(ATLAS_PATH, "PNG", optimize=True)
+    atlas.save(ATLAS_PATH, "PNG", optimize=True)
 
     background = Image.new("RGB", atlas.size, (49, 42, 58))
     background.paste(atlas, mask=atlas.getchannel("A"))
