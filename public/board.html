@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sniffari — Board</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-mode="board" class="board-mode">
+    <header>
+      <h1><canvas id="wordmark" aria-label="Sniffari" role="img"></canvas></h1>
+      <div class="status">
+        <span id="phase">Connecting…</span>
+        <span id="round"></span>
+      </div>
+      <div class="right"><span id="timer"></span></div>
+    </header>
+
+    <main>
+      <div class="boardwrap">
+        <canvas id="board"></canvas>
+        <div id="banner" class="banner"></div>
+        <div id="podium" class="podium">
+          <div class="podium-place" id="podium-place"></div>
+          <canvas id="podium-dog"></canvas>
+          <div class="podium-name" id="podium-name"></div>
+          <div class="podium-score" id="podium-score"></div>
+        </div>
+      </div>
+      <aside>
+        <section>
+          <h2>Pack</h2>
+          <div id="players"></div>
+        </section>
+        <section>
+          <h2>Log</h2>
+          <div id="log"></div>
+          <p id="join-url" class="muted"></p>
+        </section>
+      </aside>
+    </main>
+
+    <!-- The board view holds no hidden information, so it is safe on a TV in the room.
+         It attaches to the running game automatically — nothing to enter. -->
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>

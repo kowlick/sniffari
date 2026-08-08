@@ -1,0 +1,593 @@
+:root {
+  --bg: #101216;
+  --panel: #191d23;
+  --line: #272c34;
+  --text: #e8eaed;
+  --muted: #929aa6;
+  --accent: #f4a259;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+header h1 {
+  margin: 0;
+  line-height: 0;
+}
+header h1 canvas {
+  display: block;
+  height: 34px;
+  width: auto;
+}
+.status {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+#phase {
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--accent);
+}
+/* Which round and turn you are on is the thing people squint at. */
+#round {
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+#round .sep {
+  color: var(--muted);
+  font-weight: 700;
+  margin: 0 6px;
+}
+#round .of {
+  color: var(--muted);
+  font-size: 0.72em;
+  font-weight: 800;
+}
+.right {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+/* The timer is the thing people miss, so it is deliberately the loudest element here. */
+#timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 800;
+  min-width: 2.4ch;
+  text-align: center;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: #0c0e12;
+  border: 2px solid var(--line);
+}
+#timer.warn {
+  color: #ffd45e;
+  border-color: #6b5a24;
+}
+#timer.urgent {
+  color: #fff;
+  background: #b93030;
+  border-color: #ff8080;
+  animation: pulse 1s ease-in-out infinite;
+}
+#timer.hidden {
+  display: none;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.13); }
+}
+main {
+  flex: 1;
+  display: grid;
+  /* minmax(0, …) so a grid track can shrink below its content, which is what stops the
+     board from forcing the page wider than the screen. */
+  grid-template-columns: minmax(0, 1fr) 300px;
+  min-height: 0;
+}
+.board-mode main {
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+
+/*
+ * The canvas is taken out of flow on purpose. As a flex child its own size fed back into
+ * the box being measured to size it, so the first frame could be laid out larger than the
+ * viewport and then visibly snap down once the measurement settled.
+ */
+.boardwrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+#board {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 4px;
+}
+
+aside {
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  padding: 12px;
+  overflow-y: auto;
+}
+aside h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  margin: 14px 0 8px;
+}
+aside section:first-child h2 {
+  margin-top: 0;
+}
+
+.player {
+  display: grid;
+  grid-template-columns: 12px 1fr auto 34px 14px;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.player.me .pname {
+  font-weight: 700;
+  color: var(--accent);
+}
+.player.gone {
+  opacity: 0.45;
+}
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+.pdog {
+  color: var(--muted);
+  font-size: 11px;
+}
+.pscore {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.plock {
+  color: #6ee7a8;
+}
+
+#hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.tile {
+  font-size: 17px;
+  padding: 8px 12px;
+  min-width: 46px;
+  border: 1px solid var(--line);
+  background: #23282f;
+  color: var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.tile:hover {
+  border-color: var(--muted);
+}
+.tile.sel {
+  border-color: var(--accent);
+  background: #3a2f22;
+}
+.tile.pending {
+  font-size: 12px;
+  border-style: dashed;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #23282f;
+  color: var(--text);
+  padding: 9px 14px;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1206;
+  font-weight: 700;
+  width: 100%;
+}
+/* Small, muted, and out of the way. Ending the match is rare and irreversible. */
+button.quiet-danger {
+  display: block;
+  margin: 10px 0 0 auto;
+  padding: 3px 8px;
+  font-size: 11px;
+  background: none;
+  border: 1px solid #5a3636;
+  color: #b57d7d;
+  width: auto;
+}
+button.quiet-danger:hover {
+  border-color: #a33c3c;
+  color: #ff9c9c;
+}
+/* Pushed well below the safe button, so the two are never adjacent under a thumb. */
+button.quiet-danger.far {
+  margin-top: 22px;
+}
+button.icon {
+  padding: 4px 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+.rounds {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rounds .tile {
+  min-width: 38px;
+  padding: 6px 10px;
+  font-size: 15px;
+}
+.rounds .hint {
+  margin: 0 0 0 4px;
+}
+
+#log {
+  font-size: 12px;
+  color: var(--muted);
+}
+#log div {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+.muted {
+  color: var(--muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 9, 12, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 10;
+}
+.overlay.hidden {
+  display: none;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.card h2 {
+  margin: 18px 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+.card h2:first-child {
+  margin-top: 0;
+}
+label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+input {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0d0f13;
+  color: var(--text);
+  font: inherit;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.row input {
+  margin-top: 0;
+}
+.lp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.lp .pdog {
+  margin-left: auto;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 12px 0;
+}
+
+#lobby-start {
+  margin-top: 4px;
+}
+
+.dogs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  /* Extra row gap leaves room for the tall portraits to overhang upward. */
+  gap: 20px 8px;
+}
+.dogs.hidden {
+  display: none;
+}
+.dog {
+  display: flex;
+  /* Bottom-aligned so every dog stands on the same line regardless of height. */
+  align-items: flex-end;
+  gap: 8px;
+  text-align: left;
+  border-left: 5px solid var(--dog);
+  font-size: 12px;
+  line-height: 1.25;
+  padding: 6px 10px 9px;
+  min-height: 56px;
+  /* The portrait is taller than the row on purpose — a wolfhound's head rises out of it. */
+  overflow: visible;
+}
+.dog canvas {
+  flex: none;
+  margin-top: -30px;
+  margin-bottom: -8px;
+}
+.dog span {
+  padding-bottom: 2px;
+}
+.dog.taken {
+  opacity: 0.4;
+}
+.dog.mine {
+  opacity: 1;
+  border-color: var(--dog);
+  background: #2c333c;
+  font-weight: 700;
+}
+
+/* Big call-out over the board. Scales up as it fades in, then drifts away — the point is
+   that you cannot miss "it's your turn to place" while looking at the map. */
+.banner {
+  position: absolute;
+  top: 16%;
+  left: 50%;
+  transform: translate(-50%, 0) scale(0.7);
+  padding: 12px 26px;
+  border-radius: 14px;
+  background: rgba(12, 14, 18, 0.9);
+  border: 3px solid var(--accent);
+  color: #fff;
+  font-size: clamp(20px, 4.2vw, 34px);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+}
+.banner.show {
+  animation: banner-pop 2.2s cubic-bezier(0.2, 1.1, 0.4, 1) forwards;
+}
+.banner.secret {
+  border-color: #9a6bd6;
+}
+.banner.urgent {
+  border-color: #ff6b6b;
+  background: rgba(120, 24, 24, 0.94);
+}
+.banner.go {
+  border-color: #6ee7a8;
+}
+@keyframes banner-pop {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.7); }
+  14% { opacity: 1; transform: translate(-50%, 0) scale(1.12); }
+  26% { transform: translate(-50%, 0) scale(1); }
+  74% { opacity: 1; transform: translate(-50%, 0) scale(1.02); }
+  100% { opacity: 0; transform: translate(-50%, -22px) scale(1.16); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner.show { animation-duration: 2.2s; animation-timing-function: linear; }
+  #timer.urgent { animation: none; }
+}
+
+/* One placing at a time, filling the board area, the dog rushing toward the camera. */
+.podium {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: radial-gradient(ellipse at center, rgba(18, 21, 27, 0.82), rgba(10, 12, 16, 0.97));
+  z-index: 6;
+  pointer-events: none;
+  text-align: center;
+}
+.podium.show {
+  display: flex;
+  animation: podium-in 2.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.podium-place,
+.podium-name,
+.podium-score {
+  flex: 0 0 auto;
+}
+.podium-place {
+  font-size: clamp(30px, 8vw, 68px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+  -webkit-text-stroke: 3px #1a1206;
+  paint-order: stroke fill;
+}
+.podium.first .podium-place {
+  color: #ffd45e;
+}
+/*
+ * The dog is the only flexible item, so it gives way instead of shoving the placing and
+ * score off the top and bottom. Sizing it off viewport height alone meant that on a short
+ * board area it overflowed and covered the text it is supposed to be introducing.
+ */
+#podium-dog {
+  flex: 0 1 auto;
+  min-height: 0;
+  height: 38%;
+  width: auto;
+  aspect-ratio: 1;
+  max-width: 48%;
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.55));
+}
+.podium-name {
+  font-size: clamp(18px, 4.6vw, 34px);
+  font-weight: 800;
+  color: #fff;
+}
+.podium-score {
+  font-size: clamp(15px, 3.4vw, 26px);
+  font-weight: 800;
+  color: var(--muted);
+}
+.podium-score b {
+  color: #ffe066;
+  font-size: 1.35em;
+}
+/* Scale up as it arrives, hold, then push past the camera on the way out. */
+@keyframes podium-in {
+  0% { opacity: 0; transform: scale(0.6); }
+  12% { opacity: 1; transform: scale(1.04); }
+  22% { transform: scale(1); }
+  80% { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .podium.show { animation: none; display: flex; }
+}
+
+.toast {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2b1b1b;
+  border: 1px solid #6b3838;
+  color: #ffb4b4;
+  padding: 10px 16px;
+  border-radius: 8px;
+  z-index: 20;
+}
+.toast.hidden {
+  display: none;
+}
+.hidden {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  aside {
+    border-left: none;
+    border-top: 1px solid var(--line);
+    max-height: 42vh;
+  }
+}
+
+/*
+ * Phone header. There is only room for the wordmark, the round/turn, and the timer — the
+ * phase name is dropped because the banner over the board already says it, far bigger, and
+ * long ones ("Secret turn — nobody sees this one") shoved everything else off the edge.
+ */
+@media (max-width: 560px) {
+  header {
+    gap: 8px;
+    padding: 6px 10px;
+  }
+  header h1 canvas {
+    height: 24px;
+  }
+  #phase {
+    display: none;
+  }
+  #round {
+    font-size: 16px;
+  }
+  #timer {
+    font-size: 26px;
+    padding: 3px 8px;
+    min-width: 2ch;
+  }
+  button.icon {
+    font-size: 15px;
+    padding: 2px 6px;
+  }
+  .right {
+    gap: 8px;
+  }
+}

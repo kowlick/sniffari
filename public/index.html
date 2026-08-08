@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Sniffari</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-mode="player">
+    <header>
+      <h1><canvas id="wordmark" aria-label="Sniffari" role="img"></canvas></h1>
+      <div class="status">
+        <span id="phase">Connecting…</span>
+        <span id="round"></span>
+      </div>
+      <div class="right">
+        <button id="mute" class="icon" title="Sound on/off">🔊</button>
+        <span id="timer"></span>
+      </div>
+    </header>
+
+    <main>
+      <div class="boardwrap">
+        <canvas id="board"></canvas>
+        <div id="banner" class="banner"></div>
+        <!-- Placings take over the whole board area, one dog at a time. -->
+        <div id="podium" class="podium">
+          <div class="podium-place" id="podium-place"></div>
+          <canvas id="podium-dog"></canvas>
+          <div class="podium-name" id="podium-name"></div>
+          <div class="podium-score" id="podium-score"></div>
+        </div>
+      </div>
+
+      <aside>
+        <section>
+          <h2>Pack</h2>
+          <div id="players"></div>
+        </section>
+        <section>
+          <h2>Tiles — place one per turn</h2>
+          <div id="hand"></div>
+          <p id="place-hint" class="hint hidden"></p>
+          <button id="lock" class="primary hidden">Lock it in</button>
+          <button id="start" class="primary hidden">Start the match</button>
+          <!-- Deliberately small and low contrast: ending everyone's match is not a thing
+               to hit by accident on a phone. -->
+          <button id="end-match" class="quiet-danger hidden">end match</button>
+          <div id="end-confirm" class="hidden">
+            <p class="hint">Scores so far will stand.</p>
+            <!-- The safe choice is the big one, and it sits where the small button was, so
+                 a stray second tap lands on "keep playing" rather than on "end it". -->
+            <button id="end-no" class="primary">Keep playing</button>
+            <button id="end-yes" class="quiet-danger far">end the match for everyone</button>
+          </div>
+        </section>
+        <section>
+          <h2>Log</h2>
+          <div id="log"></div>
+          <p id="join-url" class="muted"></p>
+        </section>
+      </aside>
+    </main>
+
+    <!-- Stays up for the whole lobby phase: joining and picking a dog both happen here,
+         so it must not be dismissed on join. -->
+    <div id="lobby" class="overlay">
+      <div class="card">
+        <h2 id="lobby-title">Join the walk</h2>
+        <div id="final" class="hidden"></div>
+        <div id="join-row">
+          <label>Your name <input id="name" maxlength="16" autofocus /></label>
+          <div class="row"><button id="join" class="primary">Join</button></div>
+        </div>
+        <div id="pick-row" class="hidden">
+          <h2>Your dog</h2>
+          <div id="dogs" class="dogs"></div>
+          <h2>In the pack</h2>
+          <div id="lobby-players"></div>
+          <div id="host-rounds" class="hidden">
+            <h2>Match length</h2>
+            <div id="rounds" class="rounds"></div>
+          </div>
+          <p id="lobby-hint" class="hint"></p>
+          <button id="lobby-start" class="primary hidden">Start the match</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>

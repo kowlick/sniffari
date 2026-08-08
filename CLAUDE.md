@@ -1,0 +1,149 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+npm start                                    # server on :9663
+npm run dev                                  # same, with --watch
+npm test                                     # all tests
+npm test -- --test-name-pattern "jump"       # one test by name
+npm run typecheck                            # tsc --noEmit
+npm run map                                  # regenerate maps/mission.txt
+node scripts/preview.mjs --walk              # render map + simulated walk to preview.svg
+```
+
+Node 22.6+ runs the `.ts` files directly via type stripping. **There is no build step and
+no bundler.** Consequences worth remembering:
+
+- Server imports must carry the `.ts` extension (`import { Room } from './room.ts'`).
+- `erasableSyntaxOnly` is on: no `enum`, no `namespace`, no constructor parameter
+  properties. Use `as const` objects plus a union type instead of an enum.
+- `public/` is plain ES-module JavaScript served as-is. It is never compiled, so it cannot
+  import anything from `src/`.
+
+## Architecture
+
+Three layers, and the boundaries between them are the important part.
+
+**Three boards, picked by player count** — small 10×10 (1–3), medium 13×13 (4–5), large
+16×16 (6–8), each with its own stamina (`CONFIG.boards`). `Room.board` resolves live in the
+lobby and is frozen at match start. Player *density* is the thing being held constant, about
+20–25 walkable tiles per dog.
+
+**A fresh map is generated per match**, not per round — knowing the ground is most of the
+skill, so it must stay put across the three rounds inside a match. `src/sim/generate.mjs` is
+shared by the server and the map scripts (`.mjs` with a `.d.mts` so the server's typecheck
+stays honest). Since any generated map can reach a real game, `test/generate.test.ts` asserts
+the map invariants across 40 seeds per board size; the `maps/*.txt` files are only the lobby
+preview and a hand-authoring starting point.
+
+**The playfield is open, not a street grid.** ~60–70% walkable, a handful of 1×2-to-2×3
+obstacles, a long thin fence or two, and border baffles. Tests enforce: no 1-wide corridor
+runs, nothing 3×3 or bigger, every walkable tile reachable, and border-adjacent obstacles
+present. It was a reversal: a dog in a 1-wide corridor is committed until the next
+intersection, so it cannot be crossed or cut off and tiles beside its path are wasted.
+
+Two consequences that are easy to break by accident: stopping points must be **much**
+sparser than intuition says (~1 per 60 walkable tiles), and **stamina, not stopping points,
+is what paces a round** — most dogs are meant to tucker out. Shrinking the board makes the
+stopper problem worse, not better, because dogs reach everything sooner. DESIGN.md §4.1,
+§4.2 and §4.4 have the measurements.
+
+**`src/sim/` — the rules.** A deterministic finite automaton: a dog's entire state is
+`(position, facing)`, so the same map plus the same tiles always produces the same round,
+tick for tick. This file must never consult a clock, a random source, or the network.
+Determinism is what lets the server send an entire walk phase as one payload, what lets
+players reason about placements, and what makes the tests possible without mocks.
+
+The corollary is the thing that bites: because the state space is finite and the sim is
+deterministic, **every dog must eventually enter an infinite loop unless something stops
+it.** Stamina (`CONFIG.sim.stamina`) is the hard guarantee. Loop detection in
+`simulate.ts` is only a nicety that ends doomed rounds early. Never remove stamina.
+
+`simulateWalk()` resolves each tick in a fixed order — intent, terrain blocking, dog-vs-dog
+blocking iterated to a fixpoint, movement, arrival effects, stamina, loop check. The
+fixpoint matters: a dog blocked by a wall becomes an obstacle for the dog behind it, and
+iterating keeps the outcome independent of the order dogs happen to sit in the array.
+
+**`src/server/` — the game and its turns.** `Room` is the phase state machine
+(`lobby → setup → place ×5 → walk → score`), driven by `setTimeout` and by every player
+locking in. There is exactly **one Room per server** — this is a LAN game, so there are no
+room codes and no registry. It holds two tile maps: `tiles` (public) and `secretTiles`
+(turn 5). The split is a security boundary, not a convenience — `stateFor()` must never
+serialize `secretTiles`. Clients learn about secret tiles only from `reveal` events inside
+the walk payload, at the tick a dog steps on one.
+
+**`public/` — rendering only.** The client sends one message per turn and otherwise just
+draws what it is told. It never simulates. `client.js` owns the socket, the DOM and
+playback; `render.js` lays out the board; `sprites.js` holds every piece of artwork;
+`audio.js` synthesises all music and sound effects (no audio files anywhere).
+
+Sound and visuals are both driven off the sim's event stream in `addPopup`, so they cannot
+drift apart. `sfx()` ignores unknown names on purpose — adding a sim event must never throw
+in the audio layer. The two music themes are written out note by note in `audio.js`; they
+are deliberately not one tune at two tempos, which is what they used to be and what it
+sounded like.
+
+The wordmark is drawn on canvas (`drawWordmark`), not set in a font — the game ships no font
+files, and drawing it keeps the title in the same chunky-outline style as the board.
+
+**Dogs render from a sprite atlas** (`public/art/dogs-chibi.png`, 16×8 cells of 128px;
+column = `direction * 4 + frame`, row = breed in `DOGS` order). `public/atlas.js` owns sheet
+loading and anchored cell drawing — `foot` for characters, `bottom` for tall props that
+overhang the tile behind, `tile` for flat decals. See `art/` for the specs.
+
+The procedural sprites in `sprites.js` are still the fallback if the sheet fails to load, and
+`?art=drawn` forces them. Everything else — terrain, props, tiles, effects — is still drawn
+procedurally in a normalised [-0.5, 0.5] tile space, so it scales to any board size.
+
+Dog metadata comes from `DOGS` in `protocol.ts`, served via `/dogs.json` so it cannot drift
+from the server's list. **The atlas row is the array index**, so reordering `DOGS` silently
+reassigns every breed's art.
+
+**`color` is the player's identity, `fur` is the coat — keep them separate.** Identity rides
+on the collar and the stamina ring; the coat is free to be realistic (the Labrador is a
+black lab). When identity was the coat colour, every dog had to be an implausible hue.
+Shape fields `ear` / `furStyle` / `tail` / `scale` / `bw` / `bh` / `leg` carry breed
+character. Anything drawn *before* the head gets painted over by it — that bug hid the tail
+in the back view and then the collar in all three.
+
+## Conventions that carry meaning
+
+- **Tiles are a palette, not a hand.** `TILE_PALETTE` is available in full every turn; the
+  scarcity is the five placements per round and where they go. Do not reintroduce per-player
+  tile inventories.
+- **A placed tile is single use** — it fires once and is spent (scuffs are walls and are
+  never consumed). This kills the bookend trap, and it means **loop detection's premise no
+  longer holds on its own**: spending a tile changes the world, so every dog's visited-state
+  history is cleared on any `consume` event. Removing that clear silently resurrects the
+  bug where a dog escaping a trap is culled as though it were looping.
+- Direction indices double as poses in `drawDog` (`0` back, `1` right profile, `2` front,
+  `3` left profile).
+- **Directions are indexed clockwise** `0=N, 1=E, 2=S, 3=W`, which makes a right turn
+  `(d + 1) % 4`. "Right" is relative to the dog, so a dog walking down the screen turns to
+  screen-left. Wall turns are *relative*; direction tiles are *absolute* headings. These
+  are not interchangeable.
+- **Every game number lives in `src/config.ts`** (map densities in
+  `scripts/lib/generate.mjs`). Nothing else should hard-code a score, a timer, or a
+  density. DESIGN.md explains why each value is what it is; if you change one, update the
+  reasoning there too.
+- **Tune with data, not vibes.** `npm run tune` sweeps map densities and stamina across
+  many seeds and reports how long dogs actually survive. A single `preview.svg` is one
+  sample and will mislead you. The metric that matters is the share of dogs finished inside
+  20 ticks — those players placed five tiles and watched none of them fire.
+- **DESIGN.md is the source of truth for rules**, and the tests assert against it (map
+  density tests cite §4.4 directly). A rules change means editing the doc, the config, and
+  the tests together.
+- Tests use `node:test` and live in `test/`. The sim tests build tiny ASCII maps inline
+  with `parseMap` — follow that pattern rather than adding fixtures.
+
+## Deployment
+
+LAN only, by design. One server, one game, no join codes, no remote play, `PORT` as the
+sole environment variable. Do not reintroduce room codes or public-URL handling.
+
+The walk phase is still sent as a single payload rather than streamed tick by tick — that
+is simpler than streaming, survives a flaky phone connection, and guarantees every client
+animates an identical round.
