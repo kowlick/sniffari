@@ -97,7 +97,10 @@ function handle(msg) {
     const prevPhase = state?.phase;
     const prevTurn = state?.turn;
     state = msg;
-    you = msg.you ?? you;
+    // Trust the server about who we are. This used to be `msg.you ?? you`, which meant a
+    // player who left — or was removed — kept their old id and carried on being shown the
+    // game they were no longer in.
+    you = MODE === 'board' ? null : msg.you;
     if (msg.phase !== 'place') selected = null;
     if (msg.phase === 'place' && wasLobby) selected = null;
 
@@ -178,9 +181,51 @@ $('join')?.addEventListener('click', doJoin);
 $('name')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') doJoin();
 });
+/*
+ * Focus the name box only where there is a real pointer — a mouse or a trackpad.
+ *
+ * On a tablet or a phone, focusing it opens the on-screen keyboard the moment the page
+ * loads. That shrinks the visual viewport and scrolls the document to reveal the input,
+ * and with a full-height app layout nothing ever scrolls it back, so the header ends up
+ * parked off the top of the screen. This is what `autofocus` used to do.
+ */
+if (window.matchMedia?.('(pointer: fine)').matches) $('name')?.focus();
 $('start')?.addEventListener('click', () => send({ t: 'start' }));
 $('lobby-start')?.addEventListener('click', () => send({ t: 'start' }));
 $('claim-host')?.addEventListener('click', () => send({ t: 'claimHost' }));
+
+/**
+ * Give up the seat.
+ *
+ * Two clicks, because it frees your dog and there is no undo — but no modal, which phones
+ * handle badly. The stored token goes with it: keeping it would silently rejoin you to the
+ * seat you just left the next time the page loaded.
+ */
+let leaveArmed = false;
+$('leave')?.addEventListener('click', () => {
+  const b = $('leave');
+  if (!leaveArmed) {
+    leaveArmed = true;
+    b.textContent = 'Really leave? Tap again';
+    b.classList.add('armed');
+    setTimeout(() => {
+      if (!leaveArmed) return;
+      leaveArmed = false;
+      b.textContent = 'Leave the game';
+      b.classList.remove('armed');
+    }, 4000);
+    return;
+  }
+  leaveArmed = false;
+  b.textContent = 'Leave the game';
+  b.classList.remove('armed');
+  localStorage.removeItem(STORE);
+  send({ t: 'leave' });
+  you = null;
+  // The server sends one last payload with `you: null`, which is what puts the join form
+  // back up. Nothing is cleared here beyond the token — leave the rendering to that.
+  showToast('You left the game.');
+});
 $('lock')?.addEventListener('click', () => send({ t: 'lock' }));
 
 // Ending a match is destructive and cannot be undone, so it asks first — inline rather
@@ -327,24 +372,13 @@ function renderLobby() {
   renderBotPicker(Boolean(me?.isHost));
   renderAutopilot(me);
 
-  $('lobby-players').innerHTML = state.players
-    .map((p) => {
-      // Say who is choosing the placements, so a seat on autopilot is never mistaken for
-      // a person who has gone quiet.
-      const tier = state.config.difficulties?.find((d) => d.id === p.ai)?.label ?? p.ai;
-      const tag = p.isBot ? ` · ${tier}` : p.ai ? ` · auto (${tier})` : '';
-      return (
-        `<div class="lp"><span class="swatch" style="background:${DOG_COLORS.get(p.dogId) ?? '#3a3f47'}"></span>` +
-        `<span class="pname">${escapeHtml(p.name)}${p.isBot ? ' 🤖' : ''}</span>` +
-        `<span class="pdog">${p.dogId ? escapeHtml(dogName(p.dogId)) : 'choosing…'}${escapeHtml(tag)}</span></div>`
-      );
-    })
-    .join('');
+  renderLobbyRoster(me);
 
   // The host's seat is empty and I am not in it — the room cannot be started until someone
   // takes over, so offer it rather than leaving everyone waiting on a person who left.
   const canClaim = state.hostAway && !me?.isHost;
   $('claim-host').classList.toggle('hidden', !canClaim);
+  $('leave').classList.toggle('hidden', !me);
 
   // Say exactly what is missing, rather than only refusing on the Start button.
   const min = state.config.minPlayers;
@@ -424,6 +458,53 @@ function renderDogPicker() {
   }
 }
 
+/**
+ * Who is in the room, and — for the host — a way to clear any seat but their own.
+ *
+ * Built with real elements rather than an innerHTML string because the remove buttons need
+ * click handlers. Whether a seat can be cleared comes from the server's `removable`, so the
+ * button never offers something the room would refuse.
+ */
+function renderLobbyRoster(me) {
+  const el = $('lobby-players');
+  el.innerHTML = '';
+  const isHost = Boolean(me?.isHost);
+
+  for (const p of state.players) {
+    const tier = state.config.difficulties?.find((d) => d.id === p.ai)?.label ?? p.ai;
+    // Say who is choosing the placements, so a seat on autopilot is never mistaken for a
+    // person who has gone quiet — and say plainly when somebody has actually left.
+    const tag = p.isBot ? ` · ${tier}` : p.ai ? ` · auto (${tier})` : p.connected ? '' : ' · left';
+
+    const row = document.createElement('div');
+    row.className = 'lp' + (p.connected ? '' : ' gone');
+    row.innerHTML =
+      `<span class="swatch" style="background:${DOG_COLORS.get(p.dogId) ?? '#3a3f47'}"></span>` +
+      `<span class="pname">${escapeHtml(p.name)}${p.isBot ? ' 🤖' : ''}${p.id === you ? ' (you)' : ''}</span>` +
+      `<span class="pdog">${p.dogId ? escapeHtml(dogName(p.dogId)) : 'choosing…'}${escapeHtml(tag)}</span>`;
+
+    if (isHost && p.removable) {
+      const x = document.createElement('button');
+      x.className = 'kick';
+      x.title = p.isBot ? 'Remove this opponent' : `Remove ${p.name} from the game`;
+      x.textContent = '✕';
+      // A person gets a confirmation step; a bot does not, because removing one costs
+      // nobody anything.
+      x.onclick = () => {
+        if (p.isBot || x.dataset.armed) return send({ t: 'removePlayer', playerId: p.id });
+        x.dataset.armed = '1';
+        x.textContent = 'remove?';
+        setTimeout(() => {
+          delete x.dataset.armed;
+          x.textContent = '✕';
+        }, 4000);
+      };
+      row.appendChild(x);
+    }
+    el.appendChild(row);
+  }
+}
+
 /** How many rounds the match runs. Host's call, made before starting. */
 function renderRoundPicker(isHost) {
   const wrap = $('host-rounds');
@@ -490,18 +571,8 @@ function renderBotPicker(isHost) {
       : 'none';
   el.appendChild(label);
 
-  // Seats whose player has actually gone. Without this they keep a dog for ever, which
-  // counts against the eight-player cap and against the board size. `removable` comes from
-  // the server, so the button never offers something the room would refuse.
-  const ghosts = $('ghosts');
-  ghosts.innerHTML = '';
-  for (const g of state.players.filter((p) => p.removable && !p.isBot)) {
-    const b = document.createElement('button');
-    b.className = 'tile';
-    b.textContent = `− ${g.name} (left)`;
-    b.onclick = () => send({ t: 'removePlayer', playerId: g.id });
-    ghosts.appendChild(b);
-  }
+  // Removing a *person* lives on their row in the pack list, next to their name, which is
+  // where you look for it. This section is only about opponents.
 }
 
 /**
@@ -947,6 +1018,24 @@ addEventListener('orientationchange', () => setTimeout(fitCanvas, 150));
 // A different suggestion each time the page loads; blank submits the suggestion.
 if ($('name')) $('name').placeholder = randomName();
 if ($('wordmark')) drawWordmark($('wordmark'), 'Sniffari', MODE === 'board' ? 40 : 30);
+
+/*
+ * The arrival splash. Drawn at a big backing size so it stays crisp when CSS scales it to
+ * most of the screen, then removed from the DOM once the animation has run — leaving a
+ * full-screen element in place, even transparent, is how you end up with a Join button
+ * that mysteriously does not respond.
+ */
+const splash = $('splash');
+if (splash) {
+  drawWordmark($('splash-mark'), 'Sniffari', 120);
+  const clear = () => splash.remove();
+  splash.addEventListener('animationend', (e) => {
+    if (e.animationName === 'splash-fade') clear();
+  });
+  // Belt and braces: if the animation never fires (a browser that refuses it, a tab
+  // restored from the background), the splash must still get out of the way.
+  setTimeout(clear, 2600);
+}
 
 if (localStorage.getItem('sniffari.muted') === '1') {
   setMuted(true);

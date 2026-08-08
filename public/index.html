@@ -69,7 +69,10 @@
         <h2 id="lobby-title">Join the walk</h2>
         <div id="final" class="hidden"></div>
         <div id="join-row">
-          <label>Your name <input id="name" maxlength="16" autofocus /></label>
+          <!-- No autofocus. On a tablet it opens the keyboard the instant the page loads,
+               which scrolls the document and leaves the header parked off the top of the
+               screen. client.js focuses it only where there is a real pointer. -->
+          <label>Your name <input id="name" maxlength="16" enterkeyhint="go" /></label>
           <div class="row"><button id="join" class="primary">Join</button></div>
         </div>
         <div id="pick-row" class="hidden">
@@ -86,9 +89,6 @@
           <div id="host-bots" class="hidden">
             <h2>Computer opponents</h2>
             <div id="bots" class="rounds"></div>
-            <!-- Seats whose player has actually gone. Nothing else ever removed a player,
-                 so a closed tab kept its dog for ever. -->
-            <div id="ghosts" class="rounds"></div>
           </div>
           <!-- Any player, for their own dog. With every seat on autopilot the match plays
                itself, which is the way to just watch. -->
@@ -98,12 +98,19 @@
           </div>
           <p id="lobby-hint" class="hint"></p>
           <button id="lobby-start" class="primary hidden">Start the match</button>
+          <!-- Give up the seat. Also the only way to change a name or a dog, since both
+               are fixed once chosen. -->
+          <button id="leave" class="claim">Leave the game</button>
           <!-- Only ever visible when the host's seat is actually empty. Without it a lobby
                whose host closed their tab can never be started by anyone. -->
           <button id="claim-host" class="claim hidden">Claim host</button>
         </div>
       </div>
     </div>
+
+    <!-- Grows and fades once on arrival, then gets out of the way. Drawn on canvas like
+         every other bit of the wordmark: the game ships no font files. -->
+    <div id="splash" class="splash"><canvas id="splash-mark"></canvas></div>
 
     <div id="toast" class="toast hidden"></div>
     <script type="module" src="/client.js"></script>

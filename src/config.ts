@@ -42,7 +42,7 @@ export const CONFIG = {
      * `right` on every board, and turns loop-culled rounds into dogs that tucker out, which
      * is how §4.4 says a round is meant to end.
      */
-    wallRule: 'right' as 'right' | 'around' | 'open',
+    wallRule: 'open' as 'right' | 'around' | 'open',
     /** Jump distance in tiles. The tile passed over is not collected. */
     jumpDistance: 2,
   },

@@ -49,8 +49,7 @@ export type PublicPlayer = {
    */
   ai: Difficulty | null;
   /**
-   * The host may clear this seat right now: a computer opponent, or a person whose socket
-   * has been gone past the grace period. Sent so the button cannot offer what the room
+   * The host may clear this seat right now. Sent so the button cannot offer what the room
    * would refuse.
    */
   removable: boolean;
@@ -132,10 +131,16 @@ export type ClientMessage =
   /** Host only, between matches. Adds a computer opponent, which takes a seat and a dog. */
   | { t: 'addBot'; difficulty: Difficulty }
   /**
-   * Host only, between matches. Clears a computer opponent, or a person who has actually
-   * gone - a connected player is never removable. See Room.removePlayer.
+   * Host only, between matches. Clears any seat but their own: a computer opponent, a
+   * player who has gone, or one who is still here. See Room.removePlayer.
    */
   | { t: 'removePlayer'; playerId: string }
+  /**
+   * Give up your seat, freeing the dog and the slot. The one signal about leaving that is
+   * not a guess — a closed socket never says whether someone is coming back. Also how you
+   * change your name or your dog, since both are fixed once chosen.
+   */
+  | { t: 'leave' }
   /**
    * Hand your own dog to the computer, or take it back. Self only — nobody else decides
    * who plays your dog. With every seat on autopilot the match plays itself and the room

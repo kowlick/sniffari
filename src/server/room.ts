@@ -267,23 +267,63 @@ export class Room {
     if (!target) return 'No such player.';
     if (targetId === playerId) return 'You cannot remove yourself.';
 
-    if (target.kind !== 'bot') {
-      if (target.conn !== null) return `${target.name} is still connected.`;
-      const gone = target.awaySince === null ? 0 : Date.now() - target.awaySince;
-      if (gone < CONFIG.lobby.hostGraceMs) return `${target.name} may just be reconnecting.`;
-    }
-
-    this.players.delete(targetId);
-    this.broadcast();
+    this.drop(target, 'You were removed from the game.');
     return null;
   }
 
-  /** Can the host clear this seat right now? Drives the button, so the two cannot disagree. */
+  /**
+   * Give up your seat.
+   *
+   * The counterpart to everything the server *cannot* know. A closed socket says only that
+   * a connection ended, never whether the person is coming back, so every automatic rule
+   * here has to be a guess with a grace period attached. This is the one signal that is not
+   * a guess — and it is also how you change your mind about a name or a dog, since both are
+   * fixed once chosen.
+   *
+   * Allowed mid-match. Walking away from a game you are losing is rude, not a bug, and
+   * refusing would just make people close the tab instead, which leaves a worse mess.
+   */
+  leave(playerId: string): string | null {
+    const p = this.players.get(playerId);
+    if (!p) return 'You are not in this game.';
+    this.drop(p, null);
+    return null;
+  }
+
+  /** Remove a seat and tidy up everything that pointed at it. */
+  private drop(target: Player, notice: string | null) {
+    if (notice) target.conn?.send({ t: 'error', message: notice });
+    this.players.delete(target.id);
+    // `broadcast` only reaches players still in the room, so without this the person who
+    // just left keeps the last state they were sent and their screen never changes. One
+    // final payload with `you: null` puts them back at the join form.
+    target.conn?.send(this.stateFor(null));
+    // Mid-round, the current dog snapshot still lists them. Left alone the board would
+    // animate a dog with no owner, drawn in the fallback grey.
+    this.dogs = this.dogs.filter((d) => d.id !== target.id);
+
+    if (target.id === this.hostId) {
+      // Hand the room to whoever is still here rather than leaving it hostless and making
+      // someone find the claim button. Bots are never eligible.
+      const heir = [...this.players.values()].find((p) => p.kind === 'human' && p.conn !== null);
+      this.hostId = heir?.id ?? null;
+      this.markHostPresent();
+    }
+    // Their placement is gone with them, so a turn waiting only on them can finish.
+    this.maybeResolve();
+    this.broadcast();
+  }
+
+  /**
+   * Can the host clear this seat right now? Drives the button, so the two cannot disagree.
+   *
+   * Between matches the host may remove anybody — a bot, a ghost, or a person who is still
+   * connected. Booting a present player is a real social act, so it is confined to the
+   * lobby: mid-match it would be pure griefing, and the disconnected case is already
+   * covered without it.
+   */
   private removable(target: Player): boolean {
-    if (target.id === this.hostId || !this.isOpen) return false;
-    if (target.kind === 'bot') return true;
-    if (target.conn !== null) return false;
-    return target.awaySince !== null && Date.now() - target.awaySince >= CONFIG.lobby.hostGraceMs;
+    return target.id !== this.hostId && this.isOpen;
   }
 
   /**

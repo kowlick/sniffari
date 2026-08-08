@@ -172,6 +172,10 @@ wss.on('connection', (ws: WebSocket) => {
               return room.addBot(id, msg.difficulty);
             case 'removePlayer':
               return room.removePlayer(id, msg.playerId);
+            case 'leave':
+              // The socket stays open; they are back at the join screen, not disconnected.
+              playerId = null;
+              return room.leave(id);
             case 'setAutopilot':
               return room.setAutopilot(id, msg.difficulty);
             case 'setRounds':

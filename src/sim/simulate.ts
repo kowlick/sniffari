@@ -28,25 +28,27 @@ import {
  */
 
 /**
- * Structural view of the bits of CONFIG the sim reads. Deliberately not `typeof CONFIG`:
- * that carries literal types, so a caller overriding stamina per board (which the server
- * does) would not typecheck.
- */
-/**
- * What a dog does when the tile ahead is blocked.
+ * What a dog does when the tile ahead is blocked — by terrain, by a scuff, or by another
+ * dog. Measured across all three boards in DESIGN.md §4.6.
  *
  * - `right` — turn 90° to its own right. Repeating that gives the order right, back, left,
  *   so a dead end costs two turns and the dog walks out. Chiral: dogs circulate clockwise.
- * - `around` — reverse. Simple to explain, but see §4.5 of DESIGN.md: it collapses a dog's
- *   movement to one dimension, and it shuttles along a single row until loop detection
- *   culls it.
+ * - `around` — reverse. Simple to explain, and much worse than it sounds: it collapses a
+ *   dog's path to a single row, so it shuttles over about six tiles until loop detection
+ *   culls it. Kept only because having the comparison in the code is worth more than the
+ *   line it costs.
  * - `open` — turn toward whichever side it can see further along, ties to the right. Keeps
- *   dogs out in the open where the points are.
+ *   dogs out in the open where the points are. The shipping default.
  *
  * All three read only from state the sim already has, so determinism is unaffected.
  */
 export type WallRule = 'right' | 'around' | 'open';
 
+/**
+ * Structural view of the bits of CONFIG the sim reads. Deliberately not `typeof CONFIG`:
+ * that carries literal types, so a caller overriding stamina per board (which the server
+ * does) would not typecheck.
+ */
 export type SimConfig = {
   sim: {
     stamina: number;
@@ -265,7 +267,9 @@ export function simulateWalk(
       if (!changed) break;
     }
 
-    // --- 4. Blocked dogs turn right --------------------------------------------------
+    // --- 4. Blocked dogs turn ----------------------------------------------------------
+    // Terrain, a scuff, or another dog: blocked is blocked, and all three turn by the same
+    // rule (CONFIG.sim.wallRule). Splitting them would mean two rules to learn.
     for (const d of active) {
       if (!blocked.has(d.id)) continue;
 

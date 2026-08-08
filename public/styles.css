@@ -11,12 +11,32 @@
   box-sizing: border-box;
 }
 
+/*
+ * The app fills the window exactly and never scrolls. Getting that right on iPad took
+ * three separate things, and missing any one of them hid the header:
+ *
+ * - `100dvh`, not `100vh`. On iOS `vh` is the viewport with the browser toolbars *hidden*,
+ *   so a 100vh body is taller than what you can actually see whenever they are showing.
+ * - `position: fixed`. With `overflow: hidden` the document can still be scrolled *by the
+ *   browser* — focusing an input to show the keyboard does exactly that — and then nothing
+ *   scrolls it back, so the header stayed parked off the top of the screen. A fixed body
+ *   cannot be scrolled at all.
+ * - `env(safe-area-inset-*)` below. The page asks for `viewport-fit=cover`, which is a
+ *   promise to handle the insets itself; without them the top row sits under the status
+ *   bar and the bottom row under the home indicator.
+ */
+html {
+  height: 100%;
+}
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif;
+  position: fixed;
+  inset: 0;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -25,10 +45,19 @@ body {
 header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 10px 16px;
+  gap: clamp(8px, 1.6vw, 16px);
+  padding: 10px clamp(10px, 1.6vw, 16px);
+  /* viewport-fit=cover means these are ours to honour. max() keeps the normal padding on
+     every device that has no inset. */
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-left: max(clamp(10px, 1.6vw, 16px), env(safe-area-inset-left));
+  padding-right: max(clamp(10px, 1.6vw, 16px), env(safe-area-inset-right));
   border-bottom: 1px solid var(--line);
   background: var(--panel);
+  /* The round, the turn and the timer are the things people squint at; the header must
+     never be what gets squeezed out when the board wants more room. */
+  flex: 0 0 auto;
+  min-height: 0;
 }
 header h1 {
   margin: 0;
@@ -36,22 +65,29 @@ header h1 {
 }
 header h1 canvas {
   display: block;
-  height: 34px;
+  height: clamp(22px, 3.4vw, 34px);
   width: auto;
 }
 .status {
   display: flex;
-  gap: 14px;
+  gap: clamp(8px, 1.4vw, 14px);
   align-items: center;
+  min-width: 0;
 }
 #phase {
   font-weight: 800;
-  font-size: 17px;
+  font-size: clamp(13px, 1.7vw, 17px);
   color: var(--accent);
+  /* Long phase names ("Secret turn - nobody sees this one") must not shove the round and
+     the timer off the edge. The banner over the board says the same thing, far bigger. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Which round and turn you are on is the thing people squint at. */
 #round {
-  font-size: 20px;
+  font-size: clamp(15px, 2vw, 20px);
   font-weight: 900;
   color: #fff;
   letter-spacing: 0.01em;
@@ -70,13 +106,15 @@ header h1 canvas {
 .right {
   margin-left: auto;
   display: flex;
-  gap: 14px;
+  gap: clamp(8px, 1.4vw, 14px);
   align-items: center;
+  /* Never squeezed: the timer is the element people miss. */
+  flex: 0 0 auto;
 }
 /* The timer is the thing people miss, so it is deliberately the loudest element here. */
 #timer {
   font-variant-numeric: tabular-nums;
-  font-size: 34px;
+  font-size: clamp(24px, 3.4vw, 34px);
   line-height: 1;
   font-weight: 800;
   min-width: 2.4ch;
@@ -138,7 +176,11 @@ aside {
   border-left: 1px solid var(--line);
   background: var(--panel);
   padding: 12px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
   overflow-y: auto;
+  min-height: 0;
 }
 aside h2 {
   font-size: 11px;
@@ -368,6 +410,34 @@ input {
   border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
+/* Somebody whose socket has dropped. Faded rather than removed: they may be back. */
+.lp.gone {
+  opacity: 0.5;
+}
+/* Removing a person sits on their own row, next to their name, which is where you look
+   for it. Quiet by default — it is housekeeping, not one of the lobby's real buttons. */
+button.kick {
+  margin-left: auto;
+  padding: 2px 7px;
+  font-size: 11px;
+  line-height: 1.4;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 6px;
+  flex: 0 0 auto;
+}
+button.kick:hover,
+button.kick[data-armed] {
+  border-color: #a33c3c;
+  color: #ff9c9c;
+}
+/* The leave button arms on first tap; say so loudly enough that the second is deliberate. */
+button.claim.armed {
+  border-style: solid;
+  border-color: #a33c3c;
+  color: #ff9c9c;
+}
 .lp .pdog {
   margin-left: auto;
 }
@@ -557,11 +627,60 @@ input {
   border-radius: 8px;
   z-index: 20;
 }
+/*
+ * Arrival splash. Grows out of nothing, holds for a beat, then fades and takes itself out
+ * of the layout entirely — `pointer-events: none` throughout, so it can never swallow the
+ * tap that lands on the Join button behind it.
+ */
+.splash {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  z-index: 60;
+  pointer-events: none;
+  animation: splash-fade 2s ease-in forwards;
+}
+.splash canvas {
+  width: min(78vw, 700px);
+  height: auto;
+  animation: splash-grow 1.5s cubic-bezier(0.16, 0.9, 0.3, 1) forwards;
+}
+.splash.done {
+  display: none;
+}
+@keyframes splash-grow {
+  0% { transform: scale(0.25); opacity: 0; }
+  35% { opacity: 1; }
+  100% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes splash-fade {
+  0%, 62% { opacity: 1; }
+  100% { opacity: 0; }
+}
+/* One still frame instead of the zoom, for anyone who has asked not to be moved. */
+@media (prefers-reduced-motion: reduce) {
+  .splash canvas {
+    animation: none;
+  }
+  .splash {
+    animation: splash-fade 1.4s linear forwards;
+  }
+}
+
 .toast.hidden {
   display: none;
 }
+/*
+ * `!important` earns its keep here. Several buttons set `display: block` through an
+ * element+class selector (`button.claim`, `button.quiet-danger`), and those out-specify a
+ * bare `.hidden` — so toggling the class did nothing and the Claim host button sat there
+ * offering the host their own seat. A visibility utility has to beat everything, or it is
+ * not a utility.
+ */
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 @media (max-width: 860px) {
@@ -573,6 +692,7 @@ input {
     border-left: none;
     border-top: 1px solid var(--line);
     max-height: 42vh;
+    max-height: 42dvh;
   }
 }
 

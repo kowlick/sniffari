@@ -69,9 +69,11 @@ Every tick, for all dogs simultaneously:
 1. **Intent** — each dog computes its target tile: 1 tile ahead, or 2 tiles ahead if it is
    carrying a jump.
 2. **Terrain block** — if the target is a wall/building/obstacle, the dog does **not**
-   move; it turns **right** (clockwise) and the tick is spent. Turning costs a tick.
+   move; it turns by the wall rule (§4.6) and the tick is spent. Turning costs a tick.
 3. **Dog collision** — if two or more dogs want the same tile, or two dogs want to swap
-   tiles, none of them move; each turns right. This is a **greeting** (see scoring).
+   tiles, none of them move; each turns by the same rule. This is a **greeting** (see
+   scoring). Blocked is blocked, whatever is doing the blocking — two rules would be two
+   things to learn.
 4. **Move** — all remaining dogs advance.
 5. **Arrival effects**, in this order:
    a. Collect any sniff or treat on the tile.
@@ -81,7 +83,14 @@ Every tick, for all dogs simultaneously:
 6. **Stamina** — decrement. At zero the dog stops ("tuckered out").
 7. **Loop check** — see §3.3.
 
-### 3.1 Turning right
+### 3.1 Turning at a block
+
+Which way a blocked dog turns is `CONFIG.sim.wallRule`, and the measurements behind the
+choice are in §4.6. It currently ships as **`open`**: the dog looks left and right and goes
+whichever way it can see further, preferring its right when the two are equal.
+
+The table below describes the `right` rule, which is what the tie-break falls back to and
+what the geometry note after it is about.
 
 "Right" is **relative to the dog's own heading**, not to the screen. A dog walking down the
 screen that hits a wall turns to *its* right, which is screen-left.
@@ -388,9 +397,11 @@ finish. It is arguably easier to learn too — "it heads for open ground, and pr
 right" is a reason, where "it always turns right" is a fact to memorise — and it makes dogs
 harder to corner rather than easier.
 
-`CONFIG.sim.wallRule` selects between the three. It ships as `right`; changing a movement
-rule changes every player's mental model of the board, so it is a decision to make
-deliberately rather than because the table says so.
+`CONFIG.sim.wallRule` selects between the three. It ships as **`open`**.
+
+The same rule governs a dog blocked by *another dog*, not just by terrain — blocked is
+blocked, and two rules would be two things to learn. The sightline scan deliberately ignores
+other dogs, which move, and reads only terrain and scuff marks.
 
 ## 5. Direction Tiles
 

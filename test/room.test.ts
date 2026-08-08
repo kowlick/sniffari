@@ -245,7 +245,6 @@ test('bots take seats and dogs, and only the host may add or remove them', async
 
   assert.match(room.removePlayer(guest.id, bot.id) ?? '', /host/i);
   assert.match(room.removePlayer(host.id, host.id) ?? '', /yourself/i);
-  assert.match(room.removePlayer(host.id, guest.id) ?? '', /still connected/i);
   assert.equal(room.removePlayer(host.id, bot.id), null);
   assert.equal(room.players.size, 2);
 });
@@ -332,7 +331,7 @@ test('a player can hand their own dog to the computer, but not anyone else s', a
  * dog forever — against the eight-player cap and against the board size, which follows the
  * number of dogs. A host who wanted to play alone had no way to get there.
  */
-test('the host can clear out a seat whose player has actually gone', async () => {
+test('the host can clear any seat but their own, between matches', async () => {
   const room = new Room(await boards());
   const hostConn: Connection = { send() {} };
   const ghostConn: Connection = { send() {} };
@@ -341,28 +340,31 @@ test('the host can clear out a seat whose player has actually gone', async () =>
   const ghost = room.addPlayer('Watcher', ghostConn) as { id: string };
   assert.equal(room.pickDog(ghost.id, 'labrador'), null);
 
-  assert.match(room.removePlayer(host.id, ghost.id) ?? '', /still connected/i);
-
-  room.dropConnection(ghostConn);
-  assert.match(
-    room.removePlayer(host.id, ghost.id) ?? '',
-    /reconnecting/i,
-    'a socket that just dropped may only be reloading',
-  );
-
-  room.players.get(ghost.id)!.awaySince = Date.now() - CONFIG.lobby.hostGraceMs - 1;
+  // Still connected, and still removable: booting is a lobby-only social act, and the
+  // alternative was a host who could never get back to playing alone.
   assert.equal(room.removePlayer(host.id, ghost.id), null);
-  assert.equal(room.players.size, 1, 'and the host is alone, which was the point');
+  assert.equal(room.players.size, 1);
   assert.equal(room.start(host.id), null, 'solo play is reachable again');
+});
+
+test('booting is confined to the lobby; mid-match it is refused', async () => {
+  const room = new Room(await boards());
+  const host = seat(room, 'Ada', 'beagle');
+  const guest = seat(room, 'Bo', 'labrador');
+  assert.equal(room.start(host.id), null);
+
+  assert.match(
+    room.removePlayer(host.id, guest.id) ?? '',
+    /until the match is over/i,
+    'mid-match booting would be pure griefing',
+  );
+  assert.equal(room.players.size, 2);
 });
 
 test('removability is published, so the button cannot promise what the room refuses', async () => {
   const room = new Room(await boards());
-  const hostConn: Connection = { send() {} };
-  const ghostConn: Connection = { send() {} };
-  const host = room.addPlayer('Ada', hostConn) as { id: string };
-  room.pickDog(host.id, 'beagle');
-  const ghost = room.addPlayer('Watcher', ghostConn) as { id: string };
+  const host = seat(room, 'Ada', 'beagle');
+  const guest = seat(room, 'Bo', 'labrador');
   assert.equal(room.addBot(host.id, 'pup'), null);
 
   const wire = () => {
@@ -370,15 +372,66 @@ test('removability is published, so the button cannot promise what the room refu
     return new Map(s.players.map((p) => [p.id, p.removable]));
   };
 
-  assert.equal(wire().get(host.id), false, 'the host is not removable');
-  assert.equal(wire().get(ghost.id), false, 'nor is a connected player');
-  const bot = [...room.players.values()].find((p) => p.kind === 'bot')!;
-  assert.equal(wire().get(bot.id), true, 'a bot always is');
+  assert.equal(wire().get(host.id), false, 'the host cannot remove themselves');
+  assert.equal(wire().get(guest.id), true, 'anyone else in the lobby can go');
 
-  room.dropConnection(ghostConn);
-  assert.equal(wire().get(ghost.id), false, 'still inside the grace period');
-  room.players.get(ghost.id)!.awaySince = Date.now() - CONFIG.lobby.hostGraceMs - 1;
-  assert.equal(wire().get(ghost.id), true, 'and removable once they are really gone');
+  assert.equal(room.start(host.id), null);
+  assert.equal(wire().get(guest.id), false, 'but not once the match is running');
+});
+
+/**
+ * The one signal about leaving that is not a guess. Everything else the room does about
+ * absence is inference from a closed socket plus a grace period.
+ */
+test('a player can give up their seat, freeing the dog and the slot', async () => {
+  const room = new Room(await boards());
+  const host = seat(room, 'Ada', 'beagle');
+  const guest = seat(room, 'Bo', 'labrador');
+
+  assert.equal(room.leave(guest.id), null);
+  assert.equal(room.players.size, 1);
+  assert.equal(room.players.has(guest.id), false);
+  assert.equal(room.leave(guest.id), 'You are not in this game.');
+
+  // The dog is free again, which is the point of leaving to change your mind.
+  const back = room.addPlayer('Bo again', silent) as { id: string };
+  assert.equal(room.pickDog(back.id, 'labrador'), null, 'the labrador is available again');
+  assert.equal(room.hostId, host.id);
+});
+
+test('when the host leaves, the room goes to somebody who is still here', async () => {
+  const room = new Room(await boards());
+  const hostConn: Connection = { send() {} };
+  const guestConn: Connection = { send() {} };
+  const host = room.addPlayer('Ada', hostConn) as { id: string };
+  room.pickDog(host.id, 'beagle');
+  const guest = room.addPlayer('Bo', guestConn) as { id: string };
+  room.pickDog(guest.id, 'labrador');
+  assert.equal(room.addBot(host.id, 'pup'), null);
+
+  assert.equal(room.leave(host.id), null);
+  assert.equal(room.hostId, guest.id, 'handed over rather than left empty');
+  assert.equal(room.hostAway, false, 'so nobody has to hunt for the claim button');
+  assert.equal(room.start(guest.id), null);
+});
+
+test('leaving mid-match takes the dog off the board too', async () => {
+  const room = new Room(await boards());
+  const host = seat(room, 'Ada', 'beagle');
+  const guest = seat(room, 'Bo', 'labrador');
+  assert.equal(room.start(host.id), null);
+
+  const dogsNow = () => {
+    const s = room.stateFor(host.id) as Extract<ServerMessage, { t: 'state' }>;
+    return s.dogs.map((d) => d.id);
+  };
+  assert.equal(dogsNow().length, 2);
+
+  // Walking away from a game you are losing is rude, not a bug — and refusing would just
+  // make people close the tab instead, which leaves a worse mess.
+  assert.equal(room.leave(guest.id), null);
+  assert.equal(dogsNow().includes(guest.id), false, 'no ownerless dog left on the board');
+  assert.equal(dogsNow().length, 1);
 });
 
 /**
