@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { CONFIG } from '../config.ts';
 import { generateMap } from '../sim/generate.mjs';
-import { at, isStopper, isWalkable, parseMap } from '../sim/map.ts';
+import { at, isPlaceable, isStopper, isWalkable, parseMap } from '../sim/map.ts';
 import { simulateWalk } from '../sim/simulate.ts';
 import { budgetFor, chooseMove } from './ai/bot.ts';
 import { makeRng } from './ai/rng.ts';
@@ -45,6 +45,12 @@ export type Player = {
   /** Set for every bot, and for a human watching the computer play their dog. */
   ai: Difficulty | null;
   conn: Connection | null;
+  /**
+   * Epoch ms when this seat's socket dropped, or null while they are here. One clock for
+   * both things the room does about absence: opening the host seat, and letting the host
+   * clear out a player who has actually gone.
+   */
+  awaySince: number | null;
   pending: { x: number; y: number; kind: TileKind } | null;
   locked: boolean;
   matchScore: number;
@@ -183,6 +189,7 @@ export class Room {
       kind: 'human',
       ai: null,
       conn,
+      awaySince: null,
       pending: null,
       locked: false,
       matchScore: 0,
@@ -229,6 +236,8 @@ export class Room {
       kind: 'bot',
       ai: difficulty,
       conn: null,
+      // A bot has no socket to lose, so it is never away.
+      awaySince: null,
       pending: null,
       locked: false,
       matchScore: 0,
@@ -240,14 +249,41 @@ export class Room {
     return null;
   }
 
-  removeBot(playerId: string, botId: string): string | null {
-    if (playerId !== this.hostId) return 'Only the host can remove an opponent.';
-    if (!this.isOpen) return 'The match has already started.';
-    const bot = this.players.get(botId);
-    if (!bot || bot.kind !== 'bot') return 'That is not a computer opponent.';
-    this.players.delete(botId);
+  /**
+   * Clear a seat: a computer opponent, or a person who has actually gone.
+   *
+   * The second half exists because nothing ever removed a player. Closing a tab only nulls
+   * the socket, so a seat kept its dog forever — counting against the eight-player cap and
+   * against the board size, which is chosen by how many dogs are out there. A host who
+   * wanted to play alone had no way to get there.
+   *
+   * Connected people cannot be removed. A kick is a different feature with different
+   * social consequences, and nobody has asked for one; the gap here is ghosts, not guests.
+   */
+  removePlayer(playerId: string, targetId: string): string | null {
+    if (playerId !== this.hostId) return 'Only the host can remove a player.';
+    if (!this.isOpen) return 'Wait until the match is over.';
+    const target = this.players.get(targetId);
+    if (!target) return 'No such player.';
+    if (targetId === playerId) return 'You cannot remove yourself.';
+
+    if (target.kind !== 'bot') {
+      if (target.conn !== null) return `${target.name} is still connected.`;
+      const gone = target.awaySince === null ? 0 : Date.now() - target.awaySince;
+      if (gone < CONFIG.lobby.hostGraceMs) return `${target.name} may just be reconnecting.`;
+    }
+
+    this.players.delete(targetId);
     this.broadcast();
     return null;
+  }
+
+  /** Can the host clear this seat right now? Drives the button, so the two cannot disagree. */
+  private removable(target: Player): boolean {
+    if (target.id === this.hostId || !this.isOpen) return false;
+    if (target.kind === 'bot') return true;
+    if (target.conn !== null) return false;
+    return target.awaySince !== null && Date.now() - target.awaySince >= CONFIG.lobby.hostGraceMs;
   }
 
   /**
@@ -276,6 +312,7 @@ export class Room {
     const player = [...this.players.values()].find((p) => p.kind === 'human' && p.token === token);
     if (!player) return { error: 'We do not recognise that session.' };
     player.conn = conn;
+    player.awaySince = null;
     // Back inside the grace window, so the seat was never actually up for grabs. A host who
     // reloads the page keeps the room; one who was claimed while away does not get it back.
     if (player.id === this.hostId) this.markHostPresent();
@@ -287,6 +324,7 @@ export class Room {
     for (const p of this.players.values()) {
       if (p.kind === 'bot' || p.conn !== conn) continue;
       p.conn = null;
+      p.awaySince = Date.now();
       if (p.id === this.hostId) this.markHostAway();
     }
     // A player who drops mid-placement forfeits that turn on the timer; nothing stalls.
@@ -611,7 +649,9 @@ export class Room {
   private illegalSquare(x: number, y: number): string | null {
     const terrain = at(this.map, x, y);
     if (!isWalkable(terrain)) return 'Dogs cannot walk there.';
-    if (isStopper(terrain)) return 'You cannot place on a stopping point.';
+    // Open ground only. A tile dropped on a hydrant or a person covers the art and reads
+    // as a bug, and "not on top of things" is a rule you can apply by looking.
+    if (!isPlaceable(terrain)) return 'Tiles go on open ground, not on top of things.';
     if (this.tiles.has(key(x, y)) || this.secretTiles.has(key(x, y))) return 'There is already a tile there.';
     if (this.occupiedStarts().has(key(x, y))) return 'A dog is standing there.';
     return null;
@@ -718,6 +758,7 @@ export class Room {
       isHost: q.id === this.hostId,
       isBot: q.kind === 'bot',
       ai: q.ai,
+      removable: this.removable(q),
       locked: q.locked,
       matchScore: q.matchScore,
       roundScore: q.roundScore,

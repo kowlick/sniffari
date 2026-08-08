@@ -48,6 +48,12 @@ export type PublicPlayer = {
    * their dog to the computer to watch it play. `null` means a person is playing.
    */
   ai: Difficulty | null;
+  /**
+   * The host may clear this seat right now: a computer opponent, or a person whose socket
+   * has been gone past the grace period. Sent so the button cannot offer what the room
+   * would refuse.
+   */
+  removable: boolean;
   /** Has committed this turn's placement. The placement itself stays private until reveal. */
   locked: boolean;
   matchScore: number;
@@ -125,8 +131,11 @@ export type ClientMessage =
   | { t: 'claimHost' }
   /** Host only, between matches. Adds a computer opponent, which takes a seat and a dog. */
   | { t: 'addBot'; difficulty: Difficulty }
-  /** Host only, between matches. */
-  | { t: 'removeBot'; playerId: string }
+  /**
+   * Host only, between matches. Clears a computer opponent, or a person who has actually
+   * gone - a connected player is never removable. See Room.removePlayer.
+   */
+  | { t: 'removePlayer'; playerId: string }
   /**
    * Hand your own dog to the computer, or take it back. Self only — nobody else decides
    * who plays your dog. With every seat on autopilot the match plays itself and the room

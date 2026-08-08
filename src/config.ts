@@ -29,6 +29,20 @@ export const CONFIG = {
     ticksPerSecond: 1 / 1.5,
     /** A dog boxed in on all four sides gives up after turning in place this many times. */
     stuckTurnsBeforeGiveUp: 4,
+    /**
+     * What a dog does when the tile ahead is blocked. Measured with
+     * `node scripts/wall-rule.ts`; the numbers and the reasoning are in DESIGN.md §4.6.
+     *
+     * `right` was chosen when placed tiles were permanent, to stop dogs being trapped too
+     * easily. Tiles are single use now, so the constraint has relaxed — but `around` is not
+     * the answer: reversing collapses a dog's path to a single row, it shuttles back and
+     * forth over about six tiles, and loop detection culls 80-90% of rounds.
+     *
+     * `open` — look both ways, go where you can see further, ties to the right — beats
+     * `right` on every board, and turns loop-culled rounds into dogs that tucker out, which
+     * is how §4.4 says a round is meant to end.
+     */
+    wallRule: 'right' as 'right' | 'around' | 'open',
     /** Jump distance in tiles. The tile passed over is not collected. */
     jumpDistance: 2,
   },

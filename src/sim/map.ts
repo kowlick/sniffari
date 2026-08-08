@@ -79,6 +79,16 @@ export const isWalkable = (t: Terrain | null): boolean => t !== null && t !== T.
 export const isStopper = (t: Terrain | null): boolean =>
   t === T.SQUIRREL || t === T.LAKE || t === T.DRAIN;
 
+/**
+ * Terrain a tile may be placed on: open ground and nothing else.
+ *
+ * Everything that is not street or park is *something* — a hydrant to sniff, a person with
+ * a treat, a squirrel, water, a drain — and a tile dropped on top of it both reads as a
+ * mistake and hides the art underneath. "Tiles go on open ground" is also a rule a player
+ * can apply at a glance, which "anywhere walkable that is not a stopping point" was not.
+ */
+export const isPlaceable = (t: Terrain | null): boolean => t === T.STREET || t === T.PARK;
+
 /** Counts used by tests and by the density checks in DESIGN.md §4.4. */
 export function mapStats(map: GameMap) {
   const counts = new Map<Terrain, number>();

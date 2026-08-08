@@ -5,6 +5,7 @@ import { CONFIG } from '../src/config.ts';
 import { loadMap } from '../src/sim/map.ts';
 import { TILE } from '../src/sim/types.ts';
 import { Room, boardRows, type Board, type Connection } from '../src/server/room.ts';
+import type { ServerMessage } from '../src/server/protocol.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const silent: Connection = { send() {} };
@@ -242,9 +243,10 @@ test('bots take seats and dogs, and only the host may add or remove them', async
   assert.notEqual(bot.dogId, 'labrador');
   assert.equal(bot.ai, 'scout');
 
-  assert.match(room.removeBot(guest.id, bot.id) ?? '', /host/i);
-  assert.match(room.removeBot(host.id, host.id) ?? '', /not a computer opponent/i);
-  assert.equal(room.removeBot(host.id, bot.id), null);
+  assert.match(room.removePlayer(guest.id, bot.id) ?? '', /host/i);
+  assert.match(room.removePlayer(host.id, host.id) ?? '', /yourself/i);
+  assert.match(room.removePlayer(host.id, guest.id) ?? '', /still connected/i);
+  assert.equal(room.removePlayer(host.id, bot.id), null);
   assert.equal(room.players.size, 2);
 });
 
@@ -323,4 +325,94 @@ test('a player can hand their own dog to the computer, but not anyone else s', a
   assert.equal(room.players.get(host.id)!.ai, null);
 
   assert.match(room.setAutopilot(host.id, 'nope' as never) ?? '', /difficulty/i);
+});
+
+/**
+ * Nothing ever removed a player. Closing a tab only nulled the socket, so a seat kept its
+ * dog forever — against the eight-player cap and against the board size, which follows the
+ * number of dogs. A host who wanted to play alone had no way to get there.
+ */
+test('the host can clear out a seat whose player has actually gone', async () => {
+  const room = new Room(await boards());
+  const hostConn: Connection = { send() {} };
+  const ghostConn: Connection = { send() {} };
+  const host = room.addPlayer('Ada', hostConn) as { id: string };
+  assert.equal(room.pickDog(host.id, 'beagle'), null);
+  const ghost = room.addPlayer('Watcher', ghostConn) as { id: string };
+  assert.equal(room.pickDog(ghost.id, 'labrador'), null);
+
+  assert.match(room.removePlayer(host.id, ghost.id) ?? '', /still connected/i);
+
+  room.dropConnection(ghostConn);
+  assert.match(
+    room.removePlayer(host.id, ghost.id) ?? '',
+    /reconnecting/i,
+    'a socket that just dropped may only be reloading',
+  );
+
+  room.players.get(ghost.id)!.awaySince = Date.now() - CONFIG.lobby.hostGraceMs - 1;
+  assert.equal(room.removePlayer(host.id, ghost.id), null);
+  assert.equal(room.players.size, 1, 'and the host is alone, which was the point');
+  assert.equal(room.start(host.id), null, 'solo play is reachable again');
+});
+
+test('removability is published, so the button cannot promise what the room refuses', async () => {
+  const room = new Room(await boards());
+  const hostConn: Connection = { send() {} };
+  const ghostConn: Connection = { send() {} };
+  const host = room.addPlayer('Ada', hostConn) as { id: string };
+  room.pickDog(host.id, 'beagle');
+  const ghost = room.addPlayer('Watcher', ghostConn) as { id: string };
+  assert.equal(room.addBot(host.id, 'pup'), null);
+
+  const wire = () => {
+    const s = room.stateFor(host.id) as Extract<ServerMessage, { t: 'state' }>;
+    return new Map(s.players.map((p) => [p.id, p.removable]));
+  };
+
+  assert.equal(wire().get(host.id), false, 'the host is not removable');
+  assert.equal(wire().get(ghost.id), false, 'nor is a connected player');
+  const bot = [...room.players.values()].find((p) => p.kind === 'bot')!;
+  assert.equal(wire().get(bot.id), true, 'a bot always is');
+
+  room.dropConnection(ghostConn);
+  assert.equal(wire().get(ghost.id), false, 'still inside the grace period');
+  room.players.get(ghost.id)!.awaySince = Date.now() - CONFIG.lobby.hostGraceMs - 1;
+  assert.equal(wire().get(ghost.id), true, 'and removable once they are really gone');
+});
+
+/**
+ * Tiles go on open ground. Everything else on the board is *something* — a hydrant, a
+ * person, a squirrel, water — and a tile on top of one covered the art and read as a bug.
+ */
+test('tiles go on open ground, not on top of things', async () => {
+  const room = new Room(await boards());
+  const ada = seat(room, 'Ada', 'beagle');
+  room.phase = 'place';
+
+  const found = new Map<string, { x: number; y: number }>();
+  for (let y = 0; y < room.map.height; y++) {
+    for (let x = 0; x < room.map.width; x++) {
+      const t = room.map.terrain[y * room.map.width + x]!;
+      if (!found.has(t)) found.set(t, { x, y });
+    }
+  }
+
+  for (const ch of ['S', 'P', 'Q', '~', 'D'] as const) {
+    const at = found.get(ch);
+    if (!at) continue;
+    assert.match(
+      room.place(ada.id, at.x, at.y, TILE.N) ?? '',
+      /open ground/i,
+      `placing on '${ch}' should be refused`,
+    );
+  }
+
+  for (const ch of ['.', ','] as const) {
+    const at = found.get(ch);
+    if (!at) continue;
+    const start = room.map.starts[0]!;
+    if (at.x === start.x && at.y === start.y) continue;
+    assert.equal(room.place(ada.id, at.x, at.y, TILE.N), null, `'${ch}' is open ground`);
+  }
 });

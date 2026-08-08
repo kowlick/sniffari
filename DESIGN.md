@@ -343,6 +343,55 @@ P  person with treats     Q  squirrel in a tree (stopper)
 
 ---
 
+### 4.6 What a dog does at a wall
+
+The rule is **turn right** — 90° to the dog's own right, so a dog walking down the screen
+turns to screen-left. Repeating it gives the order right, back, left, which means a dead end
+costs two turns and the dog walks back out.
+
+It was chosen when placed tiles were **permanent**, and its job was to stop dogs being
+trapped too cheaply. Tiles are single use now (§5.3), so that constraint has relaxed, and
+the obvious alternative — **turn around** — deserved a look. Measured with
+`node scripts/wall-rule.ts` over 120–150 seeds per board, all three rules on identical maps
+and identical tiles:
+
+| board | rule | score | ticks lived | distinct tiles | culled by loop detection |
+|---|---|---:|---:|---:|---:|
+| small | right | 4.88 | 22.0 | 13.5 | 22% |
+| | around | 2.51 | 14.5 | **5.4** | **91%** |
+| | open | **6.18** | **24.1** | **17.4** | **0%** |
+| medium | right | 5.39 | 24.6 | 16.9 | 7% |
+| | around | 2.22 | 15.5 | **5.7** | **81%** |
+| | open | **6.00** | 23.4 | **18.4** | 1% |
+| large | right | 6.35 | **32.7** | 23.9 | 3% |
+| | around | 2.56 | 18.5 | **6.6** | **84%** |
+| | open | **7.86** | 31.7 | **24.7** | 2% |
+
+**Turning around does not work, and the reason is worse than ping-pong between two walls.**
+The ping-pong worry assumed a corridor, and §4.2 already forbids 1-wide corridors. The real
+failure is that reversing makes a dog's path *one-dimensional*: it runs east until something
+stops it, reverses, runs west until something stops it, and never leaves that row. It covers
+about **six tiles for the whole round** against 13–24, and loop detection then culls 80–90%
+of rounds as repeats. Halved scores are the symptom; the cause is that the dog stops
+exploring in two dimensions the moment it meets its first wall.
+
+Worth noting that players cannot build walls anyway. The palette is four arrows and a jump —
+the only permanent obstacle a player can create is a **scuff**, and that needs two people to
+choose the same square in the same turn (§5.4). Deliberate trapping is already hard, which is
+what freed the rule up in the first place.
+
+**`open` — look both ways, go where you can see further, ties to the right** — beats turn
+right on every board, most clearly on the small one where walls are closest together. It
+also changes *how rounds end*: on the small board it takes loop-detection culls from 22% to
+zero and turns them into dogs that tucker out, which §4.4 says is how a round is supposed to
+finish. It is arguably easier to learn too — "it heads for open ground, and prefers its
+right" is a reason, where "it always turns right" is a fact to memorise — and it makes dogs
+harder to corner rather than easier.
+
+`CONFIG.sim.wallRule` selects between the three. It ships as `right`; changing a movement
+rule changes every player's mental model of the board, so it is a decision to make
+deliberately rather than because the table says so.
+
 ## 5. Direction Tiles
 
 ### 5.1 A palette, not a hand — **unlimited supply, five placements**
@@ -385,9 +434,13 @@ obvious arrow every turn: they still have to choose a square.
 
 ### 5.3 Placement rules
 
-- Anywhere on the map that is walkable, not occupied by an existing tile, not a stopping
-  point, and not a square a dog is currently standing on. Placing on a sniff spot or a
-  person is allowed.
+- **Open ground only** — street or park, not occupied by an existing tile and not a square
+  a dog is currently standing on. Everything else on the board is *something*: a hydrant to
+  sniff, a person with a treat, a squirrel, water, a drain. A tile dropped on top of one
+  covered the art and read as a bug, and it is a rule you can apply by looking, where
+  "walkable and not a stopping point" needed you to remember which things stop a dog.
+
+  This replaced an earlier rule that allowed placing on sniff spots and people.
 - **Unused start slots are ordinary ground.** Every board carries eight start squares but a
   smaller game only uses the first few, and an empty slot is just a tile like any other. It
   is only the *occupied* ones that are off limits.

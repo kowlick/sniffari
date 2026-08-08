@@ -32,8 +32,28 @@ import {
  * that carries literal types, so a caller overriding stamina per board (which the server
  * does) would not typecheck.
  */
+/**
+ * What a dog does when the tile ahead is blocked.
+ *
+ * - `right` — turn 90° to its own right. Repeating that gives the order right, back, left,
+ *   so a dead end costs two turns and the dog walks out. Chiral: dogs circulate clockwise.
+ * - `around` — reverse. Simple to explain, but see §4.5 of DESIGN.md: it collapses a dog's
+ *   movement to one dimension, and it shuttles along a single row until loop detection
+ *   culls it.
+ * - `open` — turn toward whichever side it can see further along, ties to the right. Keeps
+ *   dogs out in the open where the points are.
+ *
+ * All three read only from state the sim already has, so determinism is unaffected.
+ */
+export type WallRule = 'right' | 'around' | 'open';
+
 export type SimConfig = {
-  sim: { stamina: number; jumpDistance: number; stuckTurnsBeforeGiveUp: number };
+  sim: {
+    stamina: number;
+    jumpDistance: number;
+    stuckTurnsBeforeGiveUp: number;
+    wallRule?: WallRule;
+  };
   scoring: {
     sniffByVisitOrder: readonly number[];
     treat: number;
@@ -60,6 +80,57 @@ type Runtime = {
   /** state key -> this dog's score when it was last in that state. See loop detection below. */
   visited: Map<string, number>;
 };
+
+/**
+ * How far a dog can see from (x, y) heading `dir` before something stops it.
+ *
+ * Terrain walls and scuff marks both count; scuffs are walls, not tiles. Only used by the
+ * `open` wall rule, and only ever reads state the sim already has, so it cannot make the
+ * simulation less deterministic.
+ */
+function sightline(
+  x: number,
+  y: number,
+  dir: Dir,
+  map: GameMap,
+  tiles: ReadonlyMap<string, PlacedTile>,
+): number {
+  let n = 0;
+  let cx = x;
+  let cy = y;
+  for (;;) {
+    const next = step(cx, cy, dir);
+    if (!isWalkable(at(map, next.x, next.y))) return n;
+    if (tiles.get(key(next.x, next.y))?.kind === TILE.SCUFF) return n;
+    cx = next.x;
+    cy = next.y;
+    n += 1;
+    // A dog cannot see round a corner, and an unbounded scan on an open board is wasted
+    // work; nothing on any board is further away than this.
+    if (n >= Math.max(map.width, map.height)) return n;
+  }
+}
+
+/** Which way a dog turns when the tile ahead is blocked. See WallRule. */
+function turnAtWall(
+  d: Runtime,
+  map: GameMap,
+  tiles: ReadonlyMap<string, PlacedTile>,
+  cfg: SimConfig,
+): Dir {
+  const rule = cfg.sim.wallRule ?? 'right';
+  if (rule === 'around') return ((d.dir + 2) % 4) as Dir;
+  if (rule === 'open') {
+    const right = ((d.dir + 1) % 4) as Dir;
+    const left = ((d.dir + 3) % 4) as Dir;
+    // Ties go right, which keeps the old rule's behaviour in a symmetrical spot and keeps
+    // the whole thing predictable: "it looks both ways, and prefers its right".
+    return sightline(d.x, d.y, left, map, tiles) > sightline(d.x, d.y, right, map, tiles)
+      ? left
+      : right;
+  }
+  return turnRight(d.dir);
+}
 
 const stateKey = (d: Runtime) => `${d.x},${d.y},${d.dir},${d.jumpArmed ? 1 : 0}`;
 const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
@@ -219,7 +290,7 @@ export function simulateWalk(
 
       // A jump into a blocked landing tile simply fails; the dog does not stay airborne.
       d.jumpArmed = false;
-      d.dir = turnRight(d.dir);
+      d.dir = turnAtWall(d, map, tiles, cfg);
       d.stuckTurns += 1;
       if (d.stuckTurns >= cfg.sim.stuckTurnsBeforeGiveUp) stop(d, 'stuck', events, cfg);
     }

@@ -170,8 +170,8 @@ wss.on('connection', (ws: WebSocket) => {
               return room.claimHost(id);
             case 'addBot':
               return room.addBot(id, msg.difficulty);
-            case 'removeBot':
-              return room.removeBot(id, msg.playerId);
+            case 'removePlayer':
+              return room.removePlayer(id, msg.playerId);
             case 'setAutopilot':
               return room.setAutopilot(id, msg.difficulty);
             case 'setRounds':

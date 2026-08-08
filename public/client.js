@@ -477,7 +477,7 @@ function renderBotPicker(isHost) {
     const remove = document.createElement('button');
     remove.className = 'tile';
     remove.textContent = `− Remove`;
-    remove.onclick = () => send({ t: 'removeBot', playerId: bots[bots.length - 1].id });
+    remove.onclick = () => send({ t: 'removePlayer', playerId: bots[bots.length - 1].id });
     el.appendChild(remove);
   }
 
@@ -489,6 +489,19 @@ function renderBotPicker(isHost) {
       ? `${bots.length} opponent${bots.length > 1 ? 's' : ''}`
       : 'none';
   el.appendChild(label);
+
+  // Seats whose player has actually gone. Without this they keep a dog for ever, which
+  // counts against the eight-player cap and against the board size. `removable` comes from
+  // the server, so the button never offers something the room would refuse.
+  const ghosts = $('ghosts');
+  ghosts.innerHTML = '';
+  for (const g of state.players.filter((p) => p.removable && !p.isBot)) {
+    const b = document.createElement('button');
+    b.className = 'tile';
+    b.textContent = `− ${g.name} (left)`;
+    b.onclick = () => send({ t: 'removePlayer', playerId: g.id });
+    ghosts.appendChild(b);
+  }
 }
 
 /**

@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "map": "node scripts/make-map.mjs",
     "tune": "node scripts/tune.mjs",
-    "ai-tourney": "node scripts/ai-tourney.ts"
+    "ai-tourney": "node scripts/ai-tourney.ts",
+    "wall-rule": "node scripts/wall-rule.ts"
   },
   "dependencies": {
     "ws": "^8.18.0"

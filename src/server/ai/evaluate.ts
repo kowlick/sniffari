@@ -10,7 +10,7 @@
  * Nothing in this file may read anything but a `BotView`. See view.ts.
  */
 
-import { at, isStopper, isWalkable } from '../../sim/map.ts';
+import { at, isPlaceable } from '../../sim/map.ts';
 import { simulateWalk } from '../../sim/simulate.ts';
 import { key, type DogInit, type PlacedTile, type TileKind } from '../../sim/types.ts';
 import type { BotView } from './view.ts';
@@ -30,8 +30,7 @@ export function legalSquares(view: BotView): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
   for (let y = 0; y < view.map.height; y++) {
     for (let x = 0; x < view.map.width; x++) {
-      const terrain = at(view.map, x, y);
-      if (!isWalkable(terrain) || isStopper(terrain)) continue;
+      if (!isPlaceable(at(view.map, x, y))) continue;
       const k = key(x, y);
       if (view.tiles.has(k) || occupied.has(k)) continue;
       out.push({ x, y });
