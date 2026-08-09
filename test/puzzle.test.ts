@@ -267,3 +267,67 @@ test('most levels have exactly one solution', () => {
   for (let n = 1; n <= total; n++) if (buildLevel(n)!.solutions === 1) unique++;
   assert.ok(unique >= total * 0.7, `only ${unique}/${total} levels have a single solution`);
 });
+
+/**
+ * Walking into a hedge is a turn; jumping into one is not.
+ *
+ * A jump is a commitment made a tile earlier, and the point of committing is that it can be
+ * wrong. While a mistimed jump quietly failed and turned her round, there was never a
+ * reason not to throw one.
+ */
+test('a jump into a hedge ends the round; walking into one turns her round', () => {
+  const walls = ['#,,,', '#,,,'];
+
+  const walking = flat(walls, [], { x: 1, y: 0, dir: 3 });
+  const w = createRun(walking);
+  step(walking, w);
+  assert.equal(w.outcome, OUTCOME.RUNNING, 'she is still going');
+  assert.equal(w.dir, 1, 'and has turned back the way she came');
+  assert.equal(w.x, 1, 'without moving');
+
+  const jumping = flat(walls, [], { x: 2, y: 0, dir: 3 });
+  const j = createRun(jumping);
+  j.jumpArmed = true;
+  step(jumping, j);
+  assert.equal(j.outcome, OUTCOME.LOST_CRASH);
+  assert.equal(j.x, 0, 'seen landing in the hedge rather than stopping short of it');
+});
+
+test('a jump off the edge is leaving the park, not a crash', () => {
+  const level = flat([',,,', ',,,'], [], { x: 1, y: 0, dir: 1 });
+  const run = createRun(level);
+  run.jumpArmed = true;
+  step(level, run);
+  assert.equal(run.outcome, OUTCOME.LOST_ESCAPED);
+});
+
+/**
+ * Two dogs walking into each other from neighbouring squares end the tick having swapped
+ * places. They never share a square, so comparing only final positions lets them pass clean
+ * through one another — they met in the middle.
+ */
+test('dogs walking into each other collide, even though they swap squares', () => {
+  const rows = [',,,,'];
+  const level = {
+    ...flat(rows, [], { x: 0, y: 0, dir: 1 }),
+    // Patrol at (1,0) on tick 0, stepping to (0,0) on tick 1 — straight at her.
+    patrols: [{ route: [{ x: 1, y: 0 }, { x: 0, y: 0 }], phase: 0 }],
+  };
+  const run = createRun(level);
+  step(level, run); // she goes (0,0)->(1,0); it goes (1,0)->(0,0)
+  assert.equal(run.outcome, OUTCOME.LOST_DOG, 'they passed through each other');
+});
+
+test('a jump still sails over another dog', () => {
+  const rows = [',,,,,'];
+  const level = {
+    ...flat(rows, [], { x: 0, y: 0, dir: 1 }),
+    // Sitting still on the square she jumps over.
+    patrols: [{ route: [{ x: 1, y: 0 }, { x: 1, y: 0 }], phase: 0 }],
+  };
+  const run = createRun(level);
+  run.jumpArmed = true;
+  step(level, run);
+  assert.equal(run.outcome, OUTCOME.RUNNING, 'over the top, unbothered');
+  assert.equal(run.x, 2);
+});

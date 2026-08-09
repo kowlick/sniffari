@@ -37,6 +37,8 @@ export const OUTCOME = {
   LOST_TIRED: 'lost-tired',
   /** Walked clean off the edge of the park. */
   LOST_ESCAPED: 'lost-escaped',
+  /** Jumped straight into a hedge. Walking into one is a turn; jumping into one is not. */
+  LOST_CRASH: 'lost-crash',
 };
 
 /** Null means off the board entirely, which is a very different thing from a wall. */
@@ -180,6 +182,9 @@ export function step(level, run) {
   run.tick += 1;
   const distance = run.jumpArmed ? 2 : 1;
   run.jumpArmed = false;
+  // Where she set off from this tick, so a head-on meeting can be spotted.
+  const fromX = run.x;
+  const fromY = run.y;
 
   const { dx, dy } = DIRS[run.dir];
   const tx = run.x + dx * distance;
@@ -197,7 +202,25 @@ export function step(level, run) {
   }
 
   if (!walkable(level, tx, ty)) {
-    // Blocked: the dog turns and the tick is spent. A jump into a wall simply fails.
+    if (distance > 1) {
+      /*
+       * A jump into a hedge ends the round.
+       *
+       * Walking into one is a turn — she is on her feet and can see it coming. A jump is a
+       * commitment made a tile earlier, and the whole point of committing is that it can be
+       * wrong. Without this a jump was strictly safe: mistimed, it quietly failed and she
+       * turned round, so there was never a reason not to throw one.
+       *
+       * Her position is set to the square she hit, so she is seen landing in it rather than
+       * stopping short of a wall for no visible reason.
+       */
+      run.x = tx;
+      run.y = ty;
+      run.outcome = OUTCOME.LOST_CRASH;
+      record(run);
+      return run;
+    }
+    // Walking into it: she turns, and the tick is spent.
     run.dir = turnAtWall(run);
   } else {
     run.x = tx;
@@ -225,11 +248,24 @@ export function step(level, run) {
     }
   }
 
-  // Meeting another dog ends the walk. Checked after everything has moved, so the board on
-  // screen at the end of the tick is the board the rule was applied to.
+  /*
+   * Meeting another dog ends the walk.
+   *
+   * Two ways to meet, and the second one is easy to miss. Landing on the same square is the
+   * obvious one. But two dogs on neighbouring squares walking *into* each other end the
+   * tick having swapped places — never sharing a square, and so passing clean through one
+   * another if you only compare final positions. They met in the middle.
+   *
+   * A jump is unaffected: a patrol moves one square a tick, so it can never swap with a dog
+   * that moved two. Sailing over another dog stays safe, which is most of what jumps are for.
+   */
   for (const patrol of level.patrols) {
-    const p = patrolAt(patrol, run.tick);
-    if (meets(run.x, run.y, p.x, p.y)) {
+    const now = patrolAt(patrol, run.tick);
+    const before = patrolAt(patrol, run.tick - 1);
+    const sameSquare = meets(run.x, run.y, now.x, now.y);
+    const swapped =
+      before.x === run.x && before.y === run.y && now.x === fromX && now.y === fromY;
+    if (sameSquare || swapped) {
       run.outcome = OUTCOME.LOST_DOG;
       record(run);
       return run;

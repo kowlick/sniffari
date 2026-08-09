@@ -46,6 +46,7 @@ export const OUTCOME: {
   LOST_DOG: string;
   LOST_TIRED: string;
   LOST_ESCAPED: string;
+  LOST_CRASH: string;
 };
 
 export function placeable(level: PuzzleLevel, x: number, y: number): boolean;

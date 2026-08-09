@@ -35,12 +35,13 @@ const STORE = 'sniffari.solo';
  * Milliseconds per tile.
  *
  * The whole tick is a tap window — the tile drops on the square she is walking onto, right
- * up until she reaches the middle of it — so this is also how long you get to decide. 620ms
- * was a reaction test; two seconds had time to think but made a failed attempt drag. 1.5s
- * is the walking pace the party game plays its rounds at, which is not a coincidence: it is
- * the speed a dog crossing a tile looks right at.
+ * up until she reaches the middle of it — so this is also how long you get to decide.
+ *
+ * Walked back down from 2s through 1.5s. The original 620ms was a reaction test; 2s made a
+ * failed attempt drag; 1.5s still felt like waiting. A second is enough to read the board
+ * and act on it without the walk between decisions becoming dead time.
  */
-const TICK_MS = 1500;
+const TICK_MS = 1000;
 
 let level = null;
 let run = null;
@@ -276,6 +277,7 @@ function finish() {
       [OUTCOME.LOST_DOG]: 'Ran into another dog',
       [OUTCOME.LOST_HAZARD]: 'Something else caught her eye',
       [OUTCOME.LOST_ESCAPED]: 'Out of the park!',
+      [OUTCOME.LOST_CRASH]: 'Straight into the hedge',
       [OUTCOME.LOST_TIRED]: 'Out of puff',
     }[run.outcome] ?? 'Try again',
     'secret',
