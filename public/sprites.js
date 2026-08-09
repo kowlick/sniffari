@@ -297,14 +297,36 @@ function drawEntityCell(ctx, row, column, px, py, s) {
   );
 }
 
+/**
+ * How hard a spent sniff spot is faded out.
+ *
+ * "Nothing left here" has to be readable at a glance, from across the room, on a board
+ * that is mostly the same warm palette. The spent frames in the atlas are only slightly
+ * duller than the fresh ones, which reads as a lighting change rather than as a state, so
+ * the colour is taken almost all the way out on top of them.
+ */
+const SPENT_FILTER = 'grayscale(0.85) brightness(0.62) contrast(0.85)';
+const SNIFFED_FILTER = 'grayscale(0.35) brightness(0.85)';
+
 export function drawSniff(ctx, px, py, s, x, y, state = 'fresh', frame = 0) {
   const kind = hash(x, y) % 3;
   const stateIndex = SNIFF_STATE[state] ?? 0;
   const column = stateIndex * 4 + (Math.floor(frame) % 4 + 4) % 4;
-  if (drawEntityCell(ctx, kind, column, px, py, s)) return;
+
+  // ctx.filter is unsupported in a few older engines; there it simply does nothing and the
+  // atlas's own spent frames still carry the state, just more quietly.
+  const filter = state === 'spent' ? SPENT_FILTER : state === 'sniffed' ? SNIFFED_FILTER : null;
+  if (filter && 'filter' in ctx) {
+    const prev = ctx.filter;
+    ctx.filter = filter;
+    const drawn = drawEntityCell(ctx, kind, column, px, py, s);
+    ctx.filter = prev;
+    if (drawn) return;
+  } else if (drawEntityCell(ctx, kind, column, px, py, s)) return;
 
   inTile(ctx, px, py, s, () => {
-    ctx.globalAlpha = state === 'spent' ? 0.4 : state === 'sniffed' ? 0.72 : 1;
+    // Matches the atlas path: spent is almost gone, sniffed-once is merely dimmed.
+    ctx.globalAlpha = state === 'spent' ? 0.28 : state === 'sniffed' ? 0.7 : 1;
     const W = 0.05;
     if (kind === 0) {
       // Fire hydrant.

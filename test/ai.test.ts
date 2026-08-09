@@ -301,10 +301,11 @@ test('every computer-controlled seat places and locks, bot or autopilot', async 
     assert.ok(p.pending, `${p.name} locked without placing anything`);
   }
 
-  const squares = new Set(
-    [...room.players.values()].filter((p) => p.pending).map((p) => `${p.pending!.x},${p.pending!.y}`),
-  );
-  assert.equal(squares.size, 3, 'three computer seats should have chosen three squares');
+  // Deliberately not asserting three *distinct* squares. Two bots wanting the same one is a
+  // legal outcome — it collides into a scuff — and on the 8x8 board, where a turn offers
+  // only a few dozen legal squares to four dogs, it happens often.
+  const placed = [...room.players.values()].filter((p) => p.pending);
+  assert.equal(placed.length, 3, 'three computer seats should each have chosen a square');
 });
 
 test('an autopiloted human is searched exactly as hard as a bot is', async () => {

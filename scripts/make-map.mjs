@@ -1,11 +1,11 @@
 /**
- * Writes the three board sizes to maps/.
+ * Writes the board sizes to maps/.
  *
  * Maps are meant to be hand-authored (see maps/README.md) — this exists to produce
  * correctly shaped ones at the densities in DESIGN.md §4.4. Deterministic for a given seed.
  * Generation itself lives in src/sim/generate.mjs, shared with tune.mjs and preview.mjs.
  *
- *   node scripts/make-map.mjs [--seed 1] [--only small|medium|large]
+ *   node scripts/make-map.mjs [--seed 1] [--only small|large]
  */
 import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';

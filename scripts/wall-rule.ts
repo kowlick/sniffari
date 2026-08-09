@@ -23,8 +23,8 @@ import { simulateWalk, type WallRule } from '../src/sim/simulate.ts';
 import { key, type DogInit, type PlacedTile, type StopReason } from '../src/sim/types.ts';
 
 const seeds = Number(process.argv[2] ?? 120);
-const boardName = process.argv[3] ?? 'medium';
-const board = CONFIG.boards.find((b) => b.name === boardName) ?? CONFIG.boards[1]!;
+const boardName = process.argv[3] ?? 'large';
+const board = CONFIG.boards.find((b) => b.name === boardName) ?? CONFIG.boards.at(-1)!;
 const RULES: WallRule[] = ['right', 'around', 'open'];
 
 /**

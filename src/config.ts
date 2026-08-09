@@ -67,8 +67,14 @@ export const CONFIG = {
     turns: 5,
     /** The last turn is not revealed until a dog steps on the tile mid-walk. */
     secretTurn: 5,
-    /** Default match length. The host can change it in the lobby, up to maxRounds. */
-    roundsPerMatch: 3,
+    /**
+     * Default match length. The host can change it in the lobby, up to maxRounds.
+     *
+     * One. Three rounds is a ten-minute commitment to make before anyone has seen the
+     * game; a single round ends while people still want another, and "play again" is right
+     * there. The host can still ask for more.
+     */
+    roundsPerMatch: 1,
     /** Three rounds is already ~10 minutes; more is a slog, not a longer game. */
     maxRounds: 3,
   },
@@ -88,20 +94,26 @@ export const CONFIG = {
   },
 
   /**
-   * Board sizes, picked by how many players are in the match. A 16x16 board with three
-   * dogs on it is a lonely game; a 10x10 with eight is a scrum. Stamina is per board and
-   * measured with scripts/tune.mjs. Roughly a 48/70/82-second walk phase at 0.5 ticks/sec.
+   * Two boards, picked by how many players are in the match: 8x8 up to four dogs, 10x10 for
+   * five and over.
    *
-   * Worth knowing before you turn these up further: past about this point stamina stops
-   * being the binding constraint. Median dog life plateaus because dogs start ending on a
-   * stopping point or in a detected loop instead, so extra stamina only lengthens the tail
-   * and the round. If dogs still feel short-lived, thin the stopping points on that board
-   * rather than adding stamina.
+   * These are deliberately *tight*. The earlier spread (10/13/16) held player density at
+   * about 20-25 walkable tiles per dog, which DESIGN.md §4.4 recommends; these sit nearer
+   * 8, so dogs are constantly in each other's way. That is the point — greetings, blocked
+   * paths and stolen sniff spots all come from proximity — but it is a different game, and
+   * §4.1 records what changed with it.
+   *
+   * Stamina came down hard to match, and the 8x8 wants far less than intuition says.
+   * Measured with `npm run tune`: on the small board a dog's median life is 15 ticks
+   * whatever stamina it is given, because it finds a stopper or starts repeating itself
+   * long before it tires. Raising stamina from 18 to 36 therefore does not lengthen a
+   * single run — it only takes the share of dogs finished inside 30% of their stamina from
+   * 18% to 33%, which is §4.4's headline metric and counts players who placed tiles and
+   * watched none of them fire.
    */
   boards: [
-    { name: 'small', file: 'small.txt', size: 10, maxPlayers: 3, stamina: 36 },
-    { name: 'medium', file: 'medium.txt', size: 13, maxPlayers: 5, stamina: 34 },
-    { name: 'large', file: 'large.txt', size: 16, maxPlayers: 8, stamina: 40 },
+    { name: 'small', file: 'small.txt', size: 8, maxPlayers: 4, stamina: 18 },
+    { name: 'large', file: 'large.txt', size: 10, maxPlayers: 8, stamina: 30 },
   ],
 
   /**

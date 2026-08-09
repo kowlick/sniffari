@@ -13,7 +13,7 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const PUBLIC_DIR = join(ROOT, 'public');
 
 /**
- * Small / medium / large. Which one a match uses is chosen by the number of players, and
+ * Small and large. Which one a match uses is chosen by the number of players, and
  * the map itself is regenerated at match start (CONFIG.freshMapEachMatch) — these shipped
  * maps are what the lobby shows before anyone has pressed start.
  */

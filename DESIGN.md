@@ -157,11 +157,37 @@ Guard 1 is the guarantee. Guards 2 and 3 are what keep it from ever being *borin
 
 | Board | Size | Tiles | Walkable | Players | Stamina | Walk phase |
 |---|---|---|---|---|---|---|
-| small | 10 × 10 | 100 | ~58 | 1–3 | 36 | ~44s |
-| medium | 13 × 13 | 169 | ~101 | 4–5 | 34 | ~53s |
-| large | 16 × 16 | 256 | ~173 | 6–8 | 40 | ~62s |
+| small | 8 × 8 | 64 | ~33 | 1–4 | 18 | ~27s |
+| large | 10 × 10 | 100 | ~58 | 5–8 | 30 | ~45s |
 
-#### Stamina has a ceiling, and it is not the number
+**These are deliberately tight, and the change is worth being explicit about.** The earlier
+spread (10/13/16) held player density near the 20–25 walkable tiles per dog recommended in
+§4.4. These sit nearer **8**: four dogs share 33 tiles, eight dogs share 58. Dogs are
+constantly in each other's way, which is where greetings, blocked paths and stolen sniff
+spots come from — but it is a different game from the one §4.4 was written about.
+
+Two consequences to watch:
+
+- **Tiles cover a large share of the board.** Eight players × 5 turns is 40 placements onto
+  roughly 50 free squares. At the default of one round that is the whole match, but it
+  means a late-turn board is dense with arrows, and collisions into scuff marks are common
+  rather than occasional.
+- **Stamina had to come down a long way**, and the small board wants far less than intuition
+  suggests — see below.
+
+#### Stamina has a ceiling, and on the 8x8 it is very low
+
+Measured with `npm run tune` across 40 seeds: on the small board a dog's median life is
+**15 ticks whatever stamina it is given**, from 18 up to 36. It finds a stopping point or
+starts repeating itself long before it tires. So raising stamina does not lengthen a single
+run — it only raises the share of dogs finished inside 30% of their stamina from **18% to
+33%**, and that share is the metric that counts players who placed five tiles and watched
+none of them fire. Hence 18.
+
+The 10×10 behaves normally: dogs use what they are given, the cut share stays near 9–13%
+across 22–40, and score rises with stamina. 30 is the balance point.
+
+#### The older finding, on the bigger boards
 
 Raising stamina buys less than it looks like it should. Measured solo on the small board,
 median dog life went 18 → 23 as stamina went 18 → 26, and then **stopped moving** all the

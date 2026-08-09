@@ -9,9 +9,8 @@
 
 /** The three board sizes, chosen by how many players are in the match. */
 export const SIZES = {
-  small: { size: 10, players: '2–3' },
-  medium: { size: 13, players: '4–5' },
-  large: { size: 16, players: '6–8' },
+  small: { size: 8, players: '1–4' },
+  large: { size: 10, players: '5–8' },
 };
 
 export const DEFAULTS = {
@@ -190,11 +189,18 @@ export function generateMap(options = {}) {
       const usable = [];
       for (let i = 2; i <= SIZE - 3; i++) {
         const [x, y] = edge.horiz ? [i, edge.base] : [edge.base, i];
-        if (grid[y][x] === '.' && !isStart(x, y)) usable.push(i);
+        // Park counts as well as street. Restricting this to street quietly starved the
+        // small boards: an 8x8 edge offers four candidate offsets in total, and any of
+        // them that happened to be grass took an edge's only chance of a baffle with it.
+        if ((grid[y][x] === '.' || grid[y][x] === ',') && !isStart(x, y)) usable.push(i);
       }
       // Spacing stays >= 4 either way: closer than that and two stubs pinch the lane
       // between them down to a single tile.
-      let nextAt = o.baffleJitter ? 2 + Math.floor(rand() * 4) : 2;
+      //
+      // The jittered start offset is for boards with room for more than one stub an edge.
+      // On a small board it only ever skips past the handful of offsets that exist, so the
+      // edge ends up bare and the perimeter lane runs unbroken.
+      let nextAt = o.baffleJitter && SIZE >= 12 ? 2 + Math.floor(rand() * 4) : 2;
       for (const i of usable) {
         if (i < nextAt) continue;
         const len = SIZE < 13 ? 1 : randInt(1, 2);

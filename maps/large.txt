@@ -1,19 +1,13 @@
-; large.txt — 16x16 for 6–8 players, seed 1
+; large.txt — 10x10 for 5–8 players, seed 1
 ; # wall  . street  , park  S sniff  P person  Q squirrel  ~ lake  D drain  1-8 starts
 ; Open playfield with border baffles. See maps/README.md.
-################
-#D..#1...#2...S#
-#........#,,,S##
-##........,,,,,#
-#.........,,,,,#
-#7,,,P,.S.,,,,3#
-#,,,S,P.~.S,,,,#
-##,,S,,S..S.P..#
-#,,,P,,P.SS.S.##
-#,,,,#####.S...#
-#8,,,,SS......4#
-##.....S.......#
-#......QS,,,,,##
-#..#....,,,,,,.#
-#..#.5..,#6,,,D#
-################
+##########
+#D.1#.2,,#
+#.S.S.,,,#
+#7,,Q.,,3#
+#,P,#.,,##
+##SP#....#
+#8,,,...4#
+#,,,,..S.#
+#..5#,6,S#
+##########

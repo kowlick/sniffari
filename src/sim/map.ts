@@ -95,10 +95,31 @@ export function mapStats(map: GameMap) {
   for (const t of map.terrain) counts.set(t, (counts.get(t) ?? 0) + 1);
   const total = map.width * map.height;
   const walkable = map.terrain.filter(isWalkable).length;
+
+  /**
+   * Openness measured against the *interior*, which is the only part the generator gets a
+   * say over — the border ring is always solid wall.
+   *
+   * This matters because the ring is a fixed cost that dominates a small board: the same
+   * generator settings read as 51% walkable on an 8x8 and 69% on a 16x16, purely from
+   * geometry. Against the interior both come out at 90%, which is the number that actually
+   * describes whether the playfield is open or a maze.
+   */
+  let interior = 0;
+  let interiorWalkable = 0;
+  for (let y = 1; y < map.height - 1; y++) {
+    for (let x = 1; x < map.width - 1; x++) {
+      interior++;
+      if (isWalkable(map.terrain[y * map.width + x]!)) interiorWalkable++;
+    }
+  }
+
   return {
     total,
     walkable,
     walkableFraction: walkable / total,
+    interior,
+    interiorWalkableFraction: interior === 0 ? 0 : interiorWalkable / interior,
     sniffs: counts.get(T.SNIFF) ?? 0,
     people: counts.get(T.PERSON) ?? 0,
     stoppers: (counts.get(T.SQUIRREL) ?? 0) + (counts.get(T.LAKE) ?? 0) + (counts.get(T.DRAIN) ?? 0),

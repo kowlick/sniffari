@@ -93,7 +93,7 @@ test('each match gets a freshly generated map', async () => {
   assert.equal(room.start(ada.id), null);
   const first = room.map.terrain.join('');
   assert.notEqual(first, shipped, 'the match should not just replay the shipped map');
-  assert.equal(room.map.width, 10, 'still the right board size for one player');
+  assert.equal(room.map.width, 8, 'still the right board size for one player');
 
   room.phase = 'match-end';
   assert.equal(room.start(ada.id), null);
