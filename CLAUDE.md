@@ -27,10 +27,13 @@ no bundler.** Consequences worth remembering:
 
 Three layers, and the boundaries between them are the important part.
 
-**Three boards, picked by player count** — small 10×10 (1–3), medium 13×13 (4–5), large
-16×16 (6–8), each with its own stamina (`CONFIG.boards`). `Room.board` resolves live in the
-lobby and is frozen at match start. Player *density* is the thing being held constant, about
-20–25 walkable tiles per dog.
+**Two boards, picked by player count** — small 8×8 (1–4), large 10×10 (5–8), each with its
+own stamina (`CONFIG.boards`). `Room.board` resolves live in the lobby and is frozen at match
+start. These are deliberately *tight*: density sits near 8 walkable tiles per dog rather than
+the 20–25 §4.4 recommends, so dogs are constantly in each other's way. Two things follow that
+are easy to trip over — 8 players × 5 turns is 40 placements onto ~50 free squares, and the
+8×8 wants far *less* stamina than intuition says (median dog life there is 15 ticks whatever
+you give it, so extra stamina only inflates the share of dogs whose tiles never fired).
 
 **A fresh map is generated per match**, not per round — knowing the ground is most of the
 skill, so it must stay put across the three rounds inside a match. `src/sim/generate.mjs` is
@@ -39,7 +42,9 @@ stays honest). Since any generated map can reach a real game, `test/generate.tes
 the map invariants across 40 seeds per board size; the `maps/*.txt` files are only the lobby
 preview and a hand-authoring starting point.
 
-**The playfield is open, not a street grid.** ~60–70% walkable, a handful of 1×2-to-2×3
+**The playfield is open, not a street grid.** ~90% of the *interior* walkable — measure
+against the interior, never the whole grid, because the solid border ring is a fixed cost
+that makes the same settings read as 51% on an 8×8 and 69% on a 16×16. a handful of 1×2-to-2×3
 obstacles, a long thin fence or two, and border baffles. Tests enforce: no 1-wide corridor
 runs, nothing 3×3 or bigger, every walkable tile reachable, and border-adjacent obstacles
 present. It was a reversal: a dog in a 1-wide corridor is committed until the next

@@ -6,7 +6,8 @@ Everyone picks a dog. Over five turns you secretly place direction tiles on an o
 San Francisco — one per turn, four revealed, the last one hidden, and you can use any tile
 as often as you like. Then all the dogs walk simultaneously, turning right at walls,
 following whatever tiles they land on, collecting sniffs and treats until a squirrel, a
-lake, or plain exhaustion stops them. Most points wins.
+lake, or plain exhaustion stops them. Most points wins. You can fill the empty seats with
+computer opponents, or hand your own dog to one and just watch.
 
 The full rules and the reasoning behind every tuning number are in [DESIGN.md](DESIGN.md).
 
@@ -29,8 +30,9 @@ tapping drops the next tile from the queue in front of her. Get her to her paren
 generated from their number and go on forever, so level 30 is the same board for everyone —
 which means a solution is worth sharing (it is just the list of ticks you tapped on).
 
-The board size is chosen by how many of you there are: 10×10 for 2–3 players, 13×13 for
-4–5, 16×16 for 6–8.
+The board size is chosen by how many of you there are: 8×8 for 1–4 players, 10×10 for 5–8.
+They are deliberately cramped — dogs get in each other's way, which is where most of the
+chaos comes from.
 
 Node 22.6+ is required — `.ts` files run directly with no build step.
 
@@ -46,7 +48,8 @@ starts a fresh one. Double-click it, or pass a port (`restart.bat 8080`).
 | `npm test` | Run the sim and map test suites |
 | `npm test -- --test-name-pattern "jump"` | Run a single test by name |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run map` | Regenerate `maps/mission.txt` |
+| `npm run map` | Regenerate the board previews in `maps/` |
+| `npm run wall-rule` | Compare what dogs do at walls, over many seeds |
 | `node scripts/preview.mjs --walk` | Render a map + simulated walk to `preview.svg` |
 | `npm run tune` | Sweep map densities over many seeds and report how rounds actually play |
 | `npm run ai-tourney` | Play the opponent difficulties against each other and report win rates |
@@ -93,12 +96,15 @@ Other things worth checking:
 ## Layout
 
 ```
-src/sim/        the game rules — deterministic, no clock, no randomness, no network
+src/sim/        the party game's rules — deterministic, no clock, no randomness, no network
 src/server/     rooms, turn state machine, websockets, static file serving
-public/         the client: canvas renderer + a small amount of DOM
+src/server/ai/  computer opponents, and the view that stops them cheating
+src/shared/     rules the browser loads directly (plain .mjs, served as-is)
+src/puzzle/     Heel: level generation and the solver that proves levels solvable
+public/         the clients: canvas renderer + a small amount of DOM
 maps/           ASCII maps (see maps/README.md)
-scripts/        map generator and SVG preview tool
-test/           sim and map tests
+scripts/        map generator, tuning sweeps, SVG preview
+test/           sim, map, room, AI and puzzle tests
 ```
 
 ## The one thing to understand
