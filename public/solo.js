@@ -31,8 +31,15 @@ const canvas = $('board');
 const ctx = canvas.getContext('2d');
 
 const STORE = 'sniffari.solo';
-/** Milliseconds per tick. Slow enough to react, brisk enough that a retry is cheap. */
-const TICK_MS = 620;
+/**
+ * Milliseconds per tile.
+ *
+ * Two seconds is a stroll, and deliberately so. The whole tick is a tap window — the tile
+ * drops on the square she is walking onto, right up until she reaches the middle of it —
+ * so this is also how long you get to decide. At 620ms that was a reaction test; at 2000ms
+ * there is time to look at where the other dogs will be and then act.
+ */
+const TICK_MS = 2000;
 
 let level = null;
 let run = null;
