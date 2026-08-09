@@ -25,6 +25,7 @@ import {
   peopleSheet,
 } from './sprites.js';
 import { whenReady } from './atlas.js';
+import { isMuted, playMusic, setMuted, sfx, stopMusic, unlock } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('board');
@@ -108,6 +109,9 @@ async function load(n) {
   $('level-input').value = String(level.level);
   reset();
   clearBanner();
+  // Thinking music. Silent until the first tap unlocks audio, which is the browser's rule
+  // and not one worth fighting.
+  playMusic('place');
 }
 
 /** Back to the start of the current level with a fresh queue. Instant, and free. */
@@ -139,13 +143,20 @@ function drop() {
   if (run.outcome !== OUTCOME.RUNNING) return;
   if (!playing) {
     playing = true;
+    // The press that starts the level is also the gesture that lets the page make a sound.
+    unlock();
+    playMusic('walk');
     beginWalk(performance.now());
     return;
   }
   const placed = tap(level, run);
   if (placed) {
     flash = { ...placed, born: performance.now(), ok: true };
+    sfx('reveal');
   } else {
+    // Refused. A distinct, unmusical blip: nothing was spent, and you should know that
+    // without having to look at the queue.
+    sfx('stuck');
     // Refused: a wall ahead, a tile already there, or the queue is empty. Nothing is spent,
     // so a mistimed press costs only the moment.
     flash = { x: run.x, y: run.y, born: performance.now(), ok: false };
@@ -170,6 +181,18 @@ $('reveal')?.addEventListener('click', async () => {
   revealed = await res.json();
   $('reveal').textContent = `Hide (taps on ${revealed.taps.join(', ')})`;
 });
+
+$('mute')?.addEventListener('click', () => {
+  unlock();
+  const m = setMuted(!isMuted());
+  $('mute').textContent = m ? '🔇' : '🔊';
+  localStorage.setItem('sniffari.muted', m ? '1' : '0');
+});
+// Shared with the party game, so turning the sound off once turns it off everywhere.
+if (localStorage.getItem('sniffari.muted') === '1') {
+  setMuted(true);
+  $('mute').textContent = '🔇';
+}
 
 $('drop').addEventListener('click', drop);
 $('retry').addEventListener('click', reset);
@@ -230,6 +253,17 @@ function beginWalk(now) {
   step(level, peek);
   walkingTo = { x: peek.x, y: peek.y };
   lastTickAt = now;
+
+  /*
+   * Sound the walk as it starts, not as it finishes.
+   *
+   * The peek already knows what this tick does, and a leap or a thump against a hedge
+   * belongs at the moment she does it. A tile firing is the exception — that happens on
+   * arrival, so it is played after the real step lands.
+   */
+  const distance = Math.abs(peek.x - run.x) + Math.abs(peek.y - run.y);
+  if (distance > 1) sfx('jump');
+  else if (distance === 0 && peek.dir !== run.dir) sfx('bump');
 }
 
 function frame(now) {
@@ -239,7 +273,10 @@ function frame(now) {
   }
   if (playing && now - lastTickAt >= TICK_MS) {
     // The walk we have been showing is over, so make it real.
+    const tilesBefore = run.tiles.size;
     step(level, run);
+    // A tile fires on arrival, so it sounds when she lands rather than when she set off.
+    if (run.tiles.size < tilesBefore) sfx('consume');
     if (run.outcome !== OUTCOME.RUNNING) {
       playing = false;
       finish();
@@ -261,6 +298,8 @@ function finish() {
       $('next').classList.remove('hidden');
       $('share').classList.remove('hidden');
       burstHearts();
+      sfx('treat');
+      stopMusic();
       // Straight on to the next one. Long enough to watch the hearts and register that she
       // made it; short enough that the game never asks you to press anything to keep going.
       advanceAt = performance.now() + 2200;
@@ -282,6 +321,20 @@ function finish() {
     }[run.outcome] ?? 'Try again',
     'secret',
   );
+
+  // The hazard that got her decides the sound, so the ending is audible as well as legible.
+  const under = level.terrain[run.y]?.[run.x];
+  sfx(
+    {
+      [OUTCOME.LOST_DOG]: 'greet',
+      [OUTCOME.LOST_TIRED]: 'tuckered',
+      [OUTCOME.LOST_ESCAPED]: 'tail',
+      [OUTCOME.LOST_CRASH]: 'bump',
+      [OUTCOME.LOST_HAZARD]: under === '~' ? 'lake' : under === 'Q' ? 'squirrel' : 'drain',
+    }[run.outcome] ?? 'bump',
+  );
+  // Back to the thinking theme: the next thing that happens is a retry.
+  playMusic('place');
 }
 
 // --- drawing -----------------------------------------------------------------------------
