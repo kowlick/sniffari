@@ -9,8 +9,9 @@
 
 /** The three board sizes, chosen by how many players are in the match. */
 export const SIZES = {
-  small: { size: 8, players: '1–4' },
-  large: { size: 10, players: '5–8' },
+  small: { size: 8, players: '1–2' },
+  medium: { size: 10, players: '3–5' },
+  large: { size: 12, players: '6–8' },
 };
 
 export const DEFAULTS = {

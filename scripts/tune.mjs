@@ -23,10 +23,9 @@ const SEEDS = Number(args.get('--seeds') ?? 40);
 // size, how many dogs actually play on it, and the stamina values under test.
 // Does breaking the symmetry of the border baffles help dogs that get stuck on the edge?
 const CONFIGS = [
-  { label: 'small SOLO', size: 8, dogs: 1, staminas: [18, 22, 26, 30, 36], opts: { baffleJitter: true } },
-  { label: 'small 4 dogs', size: 8, dogs: 4, staminas: [18, 22, 26, 30, 36], opts: { baffleJitter: true } },
-  { label: 'large 5 dogs', size: 10, dogs: 5, staminas: [22, 26, 30, 34, 40], opts: { baffleJitter: true } },
-  { label: 'large 8 dogs', size: 10, dogs: 8, staminas: [22, 26, 30, 34, 40], opts: { baffleJitter: true } },
+  { label: 'small 2 dogs', size: 8, dogs: 2, staminas: [18, 22, 26], opts: { baffleJitter: true } },
+  { label: 'medium 5 dogs', size: 10, dogs: 5, staminas: [22, 26, 30, 34], opts: { baffleJitter: true } },
+  { label: 'large 8 dogs', size: 12, dogs: 8, staminas: [26, 30, 34, 40], opts: { baffleJitter: true } },
 ];
 
 const mulberry32 = (a) => () => {

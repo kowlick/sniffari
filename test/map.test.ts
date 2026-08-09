@@ -36,7 +36,8 @@ test('ignores comments and blank lines', () => {
 
 const BOARDS = [
   { file: 'small.txt', size: 8 },
-  { file: 'large.txt', size: 10 },
+  { file: 'medium.txt', size: 10 },
+  { file: 'large.txt', size: 12 },
 ];
 
 const loadBoards = () =>

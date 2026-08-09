@@ -36,9 +36,10 @@ function makeRng(seed) {
 export function difficultyFor(level) {
   const n = Math.max(1, Math.floor(level));
 
-  // Board grows in steps and then stops. Past 13x13 a phone screen makes the dog too small
-  // to read at a glance, and difficulty has better places to come from anyway.
-  const size = n < 6 ? 7 : n < 16 ? 9 : n < 30 ? 11 : 13;
+  // A notch smaller than before, because losing the fence gave every board two more rows
+  // and two more columns of actual park. Past 12x12 a phone makes the dog too small to read
+  // at a glance, and difficulty has better places to come from anyway.
+  const size = n < 6 ? 6 : n < 16 ? 8 : n < 30 ? 10 : 12;
 
   /*
    * Tiles are capped at six, and the cap is a real constraint rather than a taste.
@@ -82,48 +83,49 @@ export function difficultyFor(level) {
 const inBounds = (g, x, y) => y >= 0 && y < g.length && x >= 0 && x < g[0].length;
 
 /**
- * A park with streets cut through it.
+ * A park with streets cut through it, and no fence around it.
  *
- * Grass by default, because a board that is mostly grass reads as a park and the streets
- * then mean something. The earlier version scattered grass at random over asphalt, which
- * gave a board with a lot of texture and no *structure* — nothing on it told you anything.
- * A street is a straight run, so it also gives the dog obvious long lanes to travel down.
+ * The whole grid is playable now. A dog that keeps walking at the edge walks out of the
+ * park and the round is over, which makes the boundary a hazard you have to steer away
+ * from rather than a wall that helpfully turns you round. It also means the board shows
+ * more park for the same number of squares — the old ring was a third of an 8x8.
+ *
+ * Grass by default so the board reads as a park, with streets as the structure. Streets are
+ * two squares wide: one-wide asphalt read as a path or a wall depending on the tile beside
+ * it, and two is unmistakably a road.
  */
 function layout(rng, size, hazards) {
   const g = Array.from({ length: size }, () => new Array(size).fill(','));
-  for (let i = 0; i < size; i++) {
-    g[0][i] = WALL;
-    g[size - 1][i] = WALL;
-    g[i][0] = WALL;
-    g[i][size - 1] = WALL;
-  }
 
-  // One or two streets, straight across, never adjacent to the fence.
   const streets = 1 + (rng() < 0.55 ? 1 : 0);
   for (let i = 0; i < streets; i++) {
     const horiz = rng() < 0.5;
-    const at = 2 + Math.floor(rng() * Math.max(1, size - 4));
-    for (let j = 1; j < size - 1; j++) {
-      if (horiz) g[at][j] = '.';
-      else g[j][at] = '.';
+    // Kept one square clear of each edge, so a street never runs along the boundary and
+    // invites the dog to skate off the side of the board.
+    const at = 1 + Math.floor(rng() * Math.max(1, size - 3));
+    for (let j = 0; j < size; j++) {
+      for (const lane of [at, at + 1]) {
+        if (lane < 0 || lane >= size) continue;
+        if (horiz) g[lane][j] = '.';
+        else g[j][lane] = '.';
+      }
     }
   }
 
-  // A few blocks. Kept off the fence line so the border reads as one clean boundary.
-  const blocks = 1 + Math.floor(rng() * Math.max(1, Math.floor((size - 4) / 2)));
+  const blocks = 1 + Math.floor(rng() * Math.max(1, Math.floor((size - 2) / 2)));
   for (let b = 0; b < blocks; b++) {
     const w = 1 + Math.floor(rng() * 2);
     const h = 1 + Math.floor(rng() * 2);
-    const x = 2 + Math.floor(rng() * Math.max(1, size - 4 - w));
-    const y = 2 + Math.floor(rng() * Math.max(1, size - 4 - h));
+    const x = 1 + Math.floor(rng() * Math.max(1, size - 2 - w));
+    const y = 1 + Math.floor(rng() * Math.max(1, size - 2 - h));
     for (let dy = 0; dy < h; dy++)
       for (let dx = 0; dx < w; dx++) if (inBounds(g, x + dx, y + dy)) g[y + dy][x + dx] = WALL;
   }
 
   if (hazards) {
     for (let i = 0; i < 2; i++) {
-      const x = 1 + Math.floor(rng() * (size - 2));
-      const y = 1 + Math.floor(rng() * (size - 2));
+      const x = Math.floor(rng() * size);
+      const y = Math.floor(rng() * size);
       if (g[y][x] === '.' || g[y][x] === ',') g[y][x] = rng() < 0.5 ? '~' : 'D';
     }
   }
@@ -132,8 +134,8 @@ function layout(rng, size, hazards) {
 
 const openCells = (g) => {
   const out = [];
-  for (let y = 1; y < g.length - 1; y++)
-    for (let x = 1; x < g[0].length - 1; x++) if (g[y][x] === '.' || g[y][x] === ',') out.push({ x, y });
+  for (let y = 0; y < g.length; y++)
+    for (let x = 0; x < g[0].length; x++) if (g[y][x] === '.' || g[y][x] === ',') out.push({ x, y });
   return out;
 };
 
@@ -154,6 +156,8 @@ function bouncePatrol(rng, g) {
     { dx: 0, dy: 1 },
     { dx: -1, dy: 0 },
   ];
+  // Off the board counts as blocked *for a patrol*. The edge is the player's problem, not
+  // theirs — a patrol that strolled out of the park would just be a puzzle piece leaving.
   const open = (x, y) => inBounds(g, x, y) && (g[y][x] === '.' || g[y][x] === ',');
 
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -195,7 +199,13 @@ function candidate(seed, spec) {
   const cells = openCells(g);
   if (cells.length < 8) return null;
 
-  const start = cells[Math.floor(rng() * cells.length)];
+  // Not on the boundary: a dog that starts facing out of the park has no puzzle to solve,
+  // only a tile to spend cancelling the situation she was handed.
+  const inner = cells.filter(
+    (c) => c.x > 0 && c.y > 0 && c.x < spec.size - 1 && c.y < spec.size - 1,
+  );
+  if (inner.length < 4) return null;
+  const start = inner[Math.floor(rng() * inner.length)];
   const goalCell = cells[Math.floor(rng() * cells.length)];
   if (start.x === goalCell.x && start.y === goalCell.y) return null;
   // Far enough apart that the answer is not "walk forwards".

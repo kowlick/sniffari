@@ -740,6 +740,10 @@ button.claim.armed {
 .solo #board {
   position: static;
   transform: none;
+  /* The canvas is taller than it is wide — it carries half a tile of sky above the board so
+     dogs on the top row are not cropped. Let it size itself. */
+  max-width: 100%;
+  max-height: 100%;
 }
 
 /* The queue reads left to right: spent, next, waiting. The "next" one is what the button

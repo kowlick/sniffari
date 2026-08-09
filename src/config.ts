@@ -94,14 +94,13 @@ export const CONFIG = {
   },
 
   /**
-   * Two boards, picked by how many players are in the match: 8x8 up to four dogs, 10x10 for
-   * five and over.
+   * Three boards: 8x8 up to two dogs, 10x10 for three to five, 12x12 for six to eight.
    *
-   * These are deliberately *tight*. The earlier spread (10/13/16) held player density at
-   * about 20-25 walkable tiles per dog, which DESIGN.md §4.4 recommends; these sit nearer
-   * 8, so dogs are constantly in each other's way. That is the point — greetings, blocked
-   * paths and stolen sniff spots all come from proximity — but it is a different game, and
-   * §4.1 records what changed with it.
+   * A correction. The previous pair (8x8 up to four, 10x10 up to eight) put eight dogs on
+   * 58 walkable tiles — about 7 each, against the 20-25 DESIGN.md §4.4 recommends — and 40
+   * placements onto roughly 50 free squares. It played like soup. These sit nearer 11-16
+   * tiles per dog: still much tighter than the original spread, which is the point, but
+   * with room to actually route a dog somewhere.
    *
    * Stamina came down hard to match, and the 8x8 wants far less than intuition says.
    * Measured with `npm run tune`: on the small board a dog's median life is 15 ticks
@@ -112,8 +111,9 @@ export const CONFIG = {
    * watched none of them fire.
    */
   boards: [
-    { name: 'small', file: 'small.txt', size: 8, maxPlayers: 4, stamina: 18 },
-    { name: 'large', file: 'large.txt', size: 10, maxPlayers: 8, stamina: 30 },
+    { name: 'small', file: 'small.txt', size: 8, maxPlayers: 2, stamina: 20 },
+    { name: 'medium', file: 'medium.txt', size: 10, maxPlayers: 5, stamina: 30 },
+    { name: 'large', file: 'large.txt', size: 12, maxPlayers: 8, stamina: 30 },
   ],
 
   /**

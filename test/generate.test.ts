@@ -124,16 +124,12 @@ test('generated maps stay inside the density bounds from DESIGN.md §4.4', () =>
       `${label}: ${(s.interiorWalkableFraction * 100).toFixed(0)}% of the interior walkable`,
     );
     assert.ok(s.stoppers >= 1, `${label}: ${s.stoppers} stopping points`);
-    // A *ratio* stops meaning anything once the denominator is 33 tiles — one stopper is
-    // already one per 33. Bound the count instead, and keep the ratio check for boards big
-    // enough for it to say something.
-    assert.ok(s.stoppers <= 3, `${label}: ${s.stoppers} stopping points is too many`);
-    if (s.walkable >= 100) {
-      assert.ok(
-        s.walkablePerStopper > 20,
-        `${label}: one stopper per ${s.walkablePerStopper.toFixed(0)} tiles is too dense`,
-      );
-    }
+    // A *ratio* stops meaning anything once the denominator is 32 tiles — one stopper is
+    // already one per 32 — so the cap is a count, scaled to the board. Three on the 8x8,
+    // four on the 12x12: proportionate either way, at roughly one per twenty walkable
+    // tiles, which is the density §4.4 actually cares about.
+    const cap = Math.max(3, Math.round(s.walkable / 20));
+    assert.ok(s.stoppers <= cap, `${label}: ${s.stoppers} stopping points, cap is ${cap}`);
     const sniffRate = s.sniffs / s.walkable;
     assert.ok(sniffRate > 0.05 && sniffRate < 0.14, `${label}: sniff rate ${sniffRate.toFixed(3)}`);
   });

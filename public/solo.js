@@ -14,7 +14,6 @@ import {
   drawHedge,
   drawDog,
   drawDrain,
-  drawFence,
   drawGround,
   drawLake,
   drawPerson,
@@ -165,12 +164,25 @@ $('share').addEventListener('click', async () => {
 
 // --- the loop ---------------------------------------------------------------------------
 
+/**
+ * One tick of movement per TICK_MS, with the ending held back until she gets there.
+ *
+ * The rules resolve a whole tick at once — she is on the next square the instant the tick
+ * turns over — but the *picture* takes TICK_MS to catch up. Calling it over at the moment
+ * the rules said so made her snap onto the parent, or onto the other dog, from wherever the
+ * animation had got to. So a terminal outcome does not end the level; it ends the level
+ * once the walk that caused it has finished playing.
+ */
 function frame(now) {
-  if (playing && run?.outcome === OUTCOME.RUNNING && now - lastTickAt >= TICK_MS) {
-    lastTickAt = now;
-    prev = { x: run.x, y: run.y, dir: run.dir };
-    step(level, run);
-    if (run.outcome !== OUTCOME.RUNNING) finish();
+  if (playing && now - lastTickAt >= TICK_MS) {
+    if (run.outcome !== OUTCOME.RUNNING) {
+      playing = false;
+      finish();
+    } else {
+      prev = { x: run.x, y: run.y, dir: run.dir };
+      step(level, run);
+      lastTickAt = now;
+    }
   }
   render(now);
   requestAnimationFrame(frame);
@@ -194,32 +206,54 @@ function finish() {
     return;
   }
   banner(
-    run.outcome === OUTCOME.LOST_DOG
-      ? 'Another dog! Try again'
-      : run.outcome === OUTCOME.LOST_HAZARD
-        ? 'Ended up somewhere wet. Try again'
-        : 'Out of puff. Try again',
+    {
+      [OUTCOME.LOST_DOG]: 'Ran into another dog',
+      [OUTCOME.LOST_HAZARD]: 'Something else caught her eye',
+      [OUTCOME.LOST_ESCAPED]: 'Out of the park!',
+      [OUTCOME.LOST_TIRED]: 'Out of puff',
+    }[run.outcome] ?? 'Try again',
     'secret',
   );
 }
 
 // --- drawing -----------------------------------------------------------------------------
 
+/**
+ * Size the canvas, with headroom above the board.
+ *
+ * Dogs are drawn taller than their tile and stand on it, so one on the top row reaches up
+ * out of the board. With the fence gone that row is playable, and the patrols up there were
+ * getting their heads cropped off by the edge of the canvas. Half a tile of sky fixes it.
+ */
+const HEADROOM = 0.6;
+let tile = 0;
+
 function fit() {
   const wrap = canvas.parentElement.getBoundingClientRect();
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const side = Math.max(120, Math.min(wrap.width, wrap.height) - 8);
-  canvas.style.width = `${side}px`;
-  canvas.style.height = `${side}px`;
-  canvas.width = side * dpr;
-  canvas.height = side * dpr;
+  const cols = level.width;
+  const rows = level.height + HEADROOM;
+  const side = Math.max(
+    60,
+    Math.min((wrap.width - 8) / cols, (wrap.height - 8) / rows),
+  );
+  const w = side * cols;
+  const h = side * rows;
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  tile = side * dpr;
 }
 
 function render(now = performance.now()) {
   if (!level || !run) return;
   fit();
-  const s = canvas.width / level.width;
+  const s = tile;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Everything below draws in board coordinates; the sky sits above it.
+  ctx.save();
+  ctx.translate(0, s * HEADROOM);
 
   // Terrain. Walls came out looking exactly like walkable street, which on a board whose
   // whole subject is where a dog can and cannot go is the worst thing they could look like.
@@ -230,22 +264,12 @@ function render(now = performance.now()) {
         drawGround(ctx, ch === 'P' ? ',' : ch, x * s, y * s, s, x, y);
         continue;
       }
-      const border = x === 0 || y === 0 || x === level.width - 1 || y === level.height - 1;
-      if (border) {
-        // The park railings. Drawn along the ring rather than as a block, so the boundary
-        // reads as something you are inside rather than as more scenery.
-        ctx.fillStyle = '#1a1e25';
-        ctx.fillRect(x * s, y * s, s, s);
-        drawFence(ctx, x * s, y * s, s, x === 0 || x === level.width - 1);
-      } else {
-        // A hedge, not a building. The party game's blocks are lit apartment buildings,
-        // which on a board of grass and footpaths look like they wandered in from another
-        // game entirely.
-        drawHedge(ctx, x * s, y * s, s, x, y, {
-          n: level.terrain[y - 1]?.[x] !== '#',
-          s: level.terrain[y + 1]?.[x] !== '#',
-        });
-      }
+      // A hedge, not a building. The party game's blocks are lit apartment buildings, which
+      // on a board of grass and footpaths look like they wandered in from another game.
+      drawHedge(ctx, x * s, y * s, s, x, y, {
+        n: level.terrain[y - 1]?.[x] !== '#',
+        s: level.terrain[y + 1]?.[x] !== '#',
+      });
     }
   }
   for (let y = 0; y < level.height; y++) {
@@ -257,6 +281,7 @@ function render(now = performance.now()) {
     }
   }
 
+  drawEdgeWarning(s, now);
   drawPatrolRoutes(s);
 
   // The parent — the entire point of the level, and previously the least visible thing on
@@ -302,8 +327,38 @@ function render(now = performance.now()) {
   drawPatrols(s, now);
   drawTheDog(s, now);
   drawFlash(s, now);
+  ctx.restore();
   renderQueue();
   updateMeta();
+}
+
+/**
+ * The park has no fence, so the edge has to say so.
+ *
+ * A hard boundary you cannot cross needs no explanation; an open one that ends the round
+ * does. A warm band bleeding inward from every side reads as "past here she is gone",
+ * without putting a wall where there is not one.
+ */
+function drawEdgeWarning(s, now) {
+  const w = s * level.width;
+  const h = s * level.height;
+  const band = s * 0.5;
+  const pulse = 0.16 + 0.06 * Math.sin(now / 700);
+  const edges = [
+    [0, 0, w, band, 0, 0, 0, band],
+    [0, h - band, w, band, 0, h, 0, h - band],
+    [0, 0, band, h, 0, 0, band, 0],
+    [w - band, 0, band, h, w, 0, w - band, 0],
+  ];
+  ctx.save();
+  for (const [x, y, bw, bh, gx0, gy0, gx1, gy1] of edges) {
+    const grad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+    grad.addColorStop(0, `rgba(255,150,90,${pulse})`);
+    grad.addColorStop(1, 'rgba(255,150,90,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, bw, bh);
+  }
+  ctx.restore();
 }
 
 /** Patrol routes are drawn in full: this is a planning game, not a memory test. */
@@ -346,33 +401,12 @@ function drawPatrols(s, now) {
       gait: (now / 500) % 1,
       moving: true,
     });
-    // Draw the danger, not the dog — and draw its real shape.
-    //
-    // A circle was the obvious choice and it lies: it reaches into the diagonal squares,
-    // which are safe. Meeting is Manhattan distance ≤ 1, so the hazard is a diamond through
-    // the four orthogonal neighbours, and a player has to be able to see that a corner is
-    // a corner they can stand on.
-    const cx = x + s / 2;
-    const cy = y + s / 2;
-    const r = s * 1.5;
-    ctx.save();
-    ctx.fillStyle = 'rgba(255,90,90,0.10)';
-    ctx.strokeStyle = 'rgba(255,90,90,0.34)';
-    ctx.lineWidth = Math.max(1.5, s * 0.045);
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - r);
-    ctx.lineTo(cx + r, cy);
-    ctx.lineTo(cx, cy + r);
-    ctx.lineTo(cx - r, cy);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
   }
 }
 
 function drawTheDog(s, now) {
-  const into = playing && run.outcome === OUTCOME.RUNNING ? Math.min(1, (now - lastTickAt) / TICK_MS) : 1;
+  // Interpolates during the closing move as well — that move is the one worth watching.
+  const into = playing ? Math.min(1, (now - lastTickAt) / TICK_MS) : 1;
   const x = (prev.x + (run.x - prev.x) * into) * s;
   const y = (prev.y + (run.y - prev.y) * into) * s;
   drawDog(ctx, x, y, s, {

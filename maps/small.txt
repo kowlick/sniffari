@@ -1,11 +1,11 @@
-; small.txt — 8x8 for 1–4 players, seed 1
+; small.txt — 8x8 for 1–2 players, seed 1
 ; # wall  . street  , park  S sniff  P person  Q squirrel  ~ lake  D drain  1-8 starts
 ; Open playfield with border baffles. See maps/README.md.
 ########
-#D1.#2,#
-#7,,.,3#
-#,SS.Q##
-#,S,P..#
-#8,,..4#
-#.5.#6,#
+#D1#.2,#
+#7,,S,3#
+##Q,S,##
+#,,,.S.#
+#8,P..4#
+#.5#,6,#
 ########

@@ -29,18 +29,26 @@ export const HAZARD_TERRAIN = new Set(['~', 'D', 'Q']);
 export const OUTCOME = {
   RUNNING: 'running',
   WON: 'won',
-  /** Walked into water, a drain, or the squirrel tree. */
+  /** Something on the board caught her: the water, a drain, the squirrel up its tree. */
   LOST_HAZARD: 'lost-hazard',
-  /** Came within a tile of another dog. */
+  /** Stepped onto the same square as another dog. */
   LOST_DOG: 'lost-dog',
   /** Ran out of steps without reaching the parent. */
   LOST_TIRED: 'lost-tired',
+  /** Walked clean off the edge of the park. */
+  LOST_ESCAPED: 'lost-escaped',
 };
 
+/** Null means off the board entirely, which is a very different thing from a wall. */
 const at = (level, x, y) =>
-  x < 0 || y < 0 || x >= level.width || y >= level.height ? WALL : level.terrain[y][x];
+  x < 0 || y < 0 || x >= level.width || y >= level.height ? null : level.terrain[y][x];
 
-const walkable = (level, x, y) => at(level, x, y) !== WALL;
+const onBoard = (level, x, y) => at(level, x, y) !== null;
+/** Blocked *within* the board. Walking off the edge is not blocked; it is an ending. */
+const walkable = (level, x, y) => {
+  const t = at(level, x, y);
+  return t !== null && t !== WALL;
+};
 
 /** Tiles may only be placed on open ground — same rule as the party game. */
 export const placeable = (level, x, y) => {
@@ -59,8 +67,14 @@ export const placeable = (level, x, y) => {
 export const patrolAt = (patrol, tick) =>
   patrol.route[(tick + patrol.phase) % patrol.route.length];
 
-/** Same tile or orthogonally touching. Diagonals do not count — too hard to read on a grid. */
-const meets = (ax, ay, bx, by) => Math.abs(ax - bx) + Math.abs(ay - by) <= 1;
+/**
+ * The same square, and nothing looser.
+ *
+ * This was orthogonal adjacency, which made every patrol a moving five-tile exclusion zone
+ * and turned most of the board into somewhere you could not be. Landing on the same square
+ * is the rule you can see: two dogs, one tile.
+ */
+const meets = (ax, ay, bx, by) => ax === bx && ay === by;
 
 /**
  * Note the dog's position for the renderer.
@@ -151,6 +165,17 @@ export function step(level, run) {
   const { dx, dy } = DIRS[run.dir];
   const tx = run.x + dx * distance;
   const ty = run.y + dy * distance;
+
+  // Off the edge. There is no fence any more: the park simply stops, and a dog that keeps
+  // walking keeps walking. Her position is recorded *outside* the board so the client can
+  // animate her going, rather than her vanishing at the boundary.
+  if (!onBoard(level, tx, ty)) {
+    run.x = tx;
+    run.y = ty;
+    run.outcome = OUTCOME.LOST_ESCAPED;
+    record(run);
+    return run;
+  }
 
   if (!walkable(level, tx, ty)) {
     // Blocked: the dog turns and the tick is spent. A jump into a wall simply fails.

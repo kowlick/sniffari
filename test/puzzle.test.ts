@@ -120,16 +120,40 @@ test('a tap with nowhere to put the tile is refused and costs nothing', () => {
   assert.equal(run.used, 0, 'the queue did not advance');
 });
 
-test('coming within one tile of another dog ends the walk', () => {
-  const level = {
+/**
+ * The same square, and nothing looser. Adjacency made every patrol a moving five-tile
+ * exclusion zone and put most of the board out of bounds.
+ */
+test('landing on another dog ends the walk; passing beside it does not', () => {
+  const shared = (route: { x: number; y: number }[], phase: number) => ({
     ...flat(['#####', '#...#', '#...#', '#####'], [], { x: 1, y: 1, dir: 1 }),
-    // Phase 1 so the patrol is standing on (3,1) at the end of tick 1 — patrols move on
-    // the same tick the dog does, and the meeting is judged after everything has moved.
-    patrols: [{ route: [{ x: 3, y: 2 }, { x: 3, y: 1 }], phase: 0 }],
-  };
+    patrols: [{ route, phase }],
+  });
+
+  // Phase 1 puts the patrol on (2,1) at the end of tick 1 — the square the dog steps onto.
+  const onto = createRun(shared([{ x: 2, y: 1 }, { x: 3, y: 1 }], 1));
+  step(shared([{ x: 2, y: 1 }, { x: 3, y: 1 }], 1), onto);
+  assert.equal(onto.outcome, OUTCOME.LOST_DOG);
+
+  // Directly below her, touching, and entirely safe.
+  const beside = shared([{ x: 2, y: 2 }, { x: 3, y: 2 }], 1);
+  const run = createRun(beside);
+  step(beside, run);
+  assert.equal(run.outcome, OUTCOME.RUNNING, 'brushing past is allowed');
+});
+
+/**
+ * There is no fence. The park just stops, and a dog that keeps walking keeps walking —
+ * which is what makes the boundary something to steer away from rather than a free turn.
+ */
+test('walking off the edge ends the round, and she is last seen outside', () => {
+  const level = flat([',,,', ',,,', ',,,'], [], { x: 1, y: 1, dir: 3 });
   const run = createRun(level);
-  step(level, run); // dog to (2,1), patrol to (3,1): orthogonally touching
-  assert.equal(run.outcome, OUTCOME.LOST_DOG, 'adjacent counts, not just the same square');
+  step(level, run); // to (0,1)
+  assert.equal(run.outcome, OUTCOME.RUNNING);
+  step(level, run); // out of the park
+  assert.equal(run.outcome, OUTCOME.LOST_ESCAPED);
+  assert.equal(run.x, -1, 'her position is recorded outside, so she can be drawn leaving');
 });
 
 /** A patrol's whole future is on the board. The puzzle is planning, not memory. */

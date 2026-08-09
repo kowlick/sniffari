@@ -1,0 +1,13 @@
+; medium.txt — 10x10 for 3–5 players, seed 1
+; # wall  . street  , park  S sniff  P person  Q squirrel  ~ lake  D drain  1-8 starts
+; Open playfield with border baffles. See maps/README.md.
+##########
+#D.1..2,,#
+##..S.,,##
+#7,,,.,,3#
+#,,S,.,Q,#
+#,SP##.P.#
+#8,,,...4#
+#,S,,..S##
+#.#5.,6,,#
+##########
