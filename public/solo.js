@@ -9,7 +9,7 @@
  * the solver proved solvable cannot disagree. See src/shared/puzzle-rules.mjs.
  */
 
-import { OUTCOME, createRun, patrolAt, step, tap } from '/shared/puzzle-rules.mjs';
+import { OUTCOME, createRun, patrolAt, step, tap, tapTarget } from '/shared/puzzle-rules.mjs';
 import {
   drawHedge,
   drawDog,
@@ -38,8 +38,17 @@ let level = null;
 let run = null;
 let playing = false;
 let lastTickAt = 0;
-/** Where the dog was at the end of the previous tick, so movement can be interpolated. */
-let prev = null;
+/**
+ * Where this tick's walk is taking her, worked out one tick ahead purely to animate toward.
+ *
+ * The rules resolve a tick in one go, so the moment `step` runs she *is* on the next square.
+ * Running it at the start of the animation therefore left her logical position a whole tile
+ * in front of the drawn one — and since a tap drops its tile ahead of the *logical*
+ * position, tiles landed one square farther out than the player aimed. The step now happens
+ * when the walk finishes rather than when it starts, and this is the peek that lets the
+ * picture move in the meantime.
+ */
+let walkingTo = null;
 let flash = null;
 
 /**
@@ -90,7 +99,7 @@ async function load(n) {
 /** Back to the start of the current level with a fresh queue. Instant, and free. */
 function reset() {
   run = createRun(level);
-  prev = { x: run.x, y: run.y, dir: run.dir };
+  walkingTo = null;
   playing = false;
   flash = null;
   lastTickAt = 0;
@@ -113,7 +122,7 @@ function drop() {
   if (run.outcome !== OUTCOME.RUNNING) return;
   if (!playing) {
     playing = true;
-    lastTickAt = performance.now();
+    beginWalk(performance.now());
     return;
   }
   const placed = tap(level, run);
@@ -173,15 +182,30 @@ $('share').addEventListener('click', async () => {
  * animation had got to. So a terminal outcome does not end the level; it ends the level
  * once the walk that caused it has finished playing.
  */
+/**
+ * Look one tick ahead, so the picture has somewhere to walk to.
+ *
+ * Only the destination is taken from the peek. The real `step` runs when the walk finishes
+ * and is authoritative — which matters because a tap can land *during* the walk. It cannot
+ * change where she is going (a tile on the destination sets her facing on arrival, not the
+ * move she is already making), but it can change everything after that.
+ */
+function beginWalk(now) {
+  const peek = { ...run, tiles: new Map(run.tiles), taps: [...run.taps], trail: null };
+  step(level, peek);
+  walkingTo = { x: peek.x, y: peek.y };
+  lastTickAt = now;
+}
+
 function frame(now) {
   if (playing && now - lastTickAt >= TICK_MS) {
+    // The walk we have been showing is over, so make it real.
+    step(level, run);
     if (run.outcome !== OUTCOME.RUNNING) {
       playing = false;
       finish();
     } else {
-      prev = { x: run.x, y: run.y, dir: run.dir };
-      step(level, run);
-      lastTickAt = now;
+      beginWalk(now);
     }
   }
   render(now);
@@ -324,6 +348,19 @@ function render(now = performance.now()) {
     drawPlacedTile(ctx, kind, tx * s, ty * s, s, '#f4a259', 1);
   }
 
+  // The square the next tap would claim. Worth showing again now that it is the square she
+  // is walking onto rather than the one beyond it.
+  const target = tapTarget(level, run);
+  if (target && run.outcome === OUTCOME.RUNNING) {
+    ctx.save();
+    ctx.globalAlpha = 0.28 + 0.16 * Math.sin(now / 260);
+    ctx.strokeStyle = '#8fd4ff';
+    ctx.lineWidth = Math.max(2, s * 0.06);
+    ctx.setLineDash([s * 0.16, s * 0.12]);
+    ctx.strokeRect(target.x * s + s * 0.1, target.y * s + s * 0.1, s * 0.8, s * 0.8);
+    ctx.restore();
+  }
+
   drawPatrols(s, now);
   drawTheDog(s, now);
   drawFlash(s, now);
@@ -384,16 +421,17 @@ function drawPatrols(s, now) {
   const t = run.tick;
   const into = playing ? Math.min(1, (now - lastTickAt) / TICK_MS) : 0;
   for (const patrol of level.patrols) {
-    const from = patrolAt(patrol, Math.max(0, t - (playing ? 1 : 0)));
-    const to = patrolAt(patrol, t);
+    // Same clock as the dog: standing on tick t and walking toward t+1, so what you see
+    // beside her is what the rules will compare her against when this walk lands.
+    const from = patrolAt(patrol, t);
+    const to = patrolAt(patrol, t + 1);
     const x = (from.x + (to.x - from.x) * into) * s;
     const y = (from.y + (to.y - from.y) * into) * s;
     // Faces where it is *going*, taken from the next tick rather than the last one. Derived
     // from the previous tick it stood facing north whenever the board was paused, which is
     // exactly when a player is studying it to work out where it will be.
-    const ahead = patrolAt(patrol, t + 1);
     const dir =
-      ahead.x > to.x ? 1 : ahead.x < to.x ? 3 : ahead.y > to.y ? 2 : ahead.y < to.y ? 0 : 2;
+      to.x > from.x ? 1 : to.x < from.x ? 3 : to.y > from.y ? 2 : to.y < from.y ? 0 : 2;
     drawDog(ctx, x, y, s, {
       spec: THEIRS,
       color: '#e8503a',
@@ -405,10 +443,13 @@ function drawPatrols(s, now) {
 }
 
 function drawTheDog(s, now) {
-  // Interpolates during the closing move as well — that move is the one worth watching.
-  const into = playing ? Math.min(1, (now - lastTickAt) / TICK_MS) : 1;
-  const x = (prev.x + (run.x - prev.x) * into) * s;
-  const y = (prev.y + (run.y - prev.y) * into) * s;
+  // She is drawn walking *from* her logical square toward the next one, which is the whole
+  // point: where she appears and where the rules think she is now agree, so a tile dropped
+  // "in front of her" lands in front of her.
+  const into = playing && walkingTo ? Math.min(1, (now - lastTickAt) / TICK_MS) : 0;
+  const to = walkingTo ?? run;
+  const x = (run.x + (to.x - run.x) * into) * s;
+  const y = (run.y + (to.y - run.y) * into) * s;
   drawDog(ctx, x, y, s, {
     spec: YOURS,
     color: YOURS.color ?? '#e8503a',

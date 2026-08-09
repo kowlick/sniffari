@@ -106,17 +106,22 @@ export function createRun(level) {
 }
 
 /**
- * The square a tap would drop a tile on: the one directly ahead of the dog.
+ * The square a tap would drop a tile on: **the one she is about to step onto**.
  *
- * Returns null when that square cannot take a tile — a wall, off the board, already
- * occupied. The tap is then refused and the queue does not advance, so a mistimed tap costs
- * you nothing but the tick you were hoping to use.
+ * Normally that is the square directly ahead. With a jump armed it is two ahead, because
+ * that is where she lands — a tile dropped on the square in between would be sailed over
+ * and never fire, which looks like the game swallowing your tile.
+ *
+ * Returns null when the square cannot take a tile: a wall, off the board, or already
+ * occupied. The tap is then refused and the queue does not advance, so a mistimed press
+ * costs nothing but the moment.
  */
 export function tapTarget(level, run) {
   if (run.outcome !== OUTCOME.RUNNING || run.used >= level.queue.length) return null;
+  const distance = run.jumpArmed ? 2 : 1;
   const { dx, dy } = DIRS[run.dir];
-  const x = run.x + dx;
-  const y = run.y + dy;
+  const x = run.x + dx * distance;
+  const y = run.y + dy * distance;
   if (!placeable(level, x, y)) return null;
   if (run.tiles.has(`${x},${y}`)) return null;
   return { x, y, kind: level.queue[run.used] };
