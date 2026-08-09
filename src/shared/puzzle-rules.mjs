@@ -119,29 +119,20 @@ export function tap(level, run) {
 }
 
 /**
- * Which way a blocked dog turns.
+ * Which way a blocked dog turns: straight back the way she came.
  *
- * The `open` rule from the party game — look both ways, go where you can see further, ties
- * to the right. Kept identical on purpose: a player who has learned how dogs behave on the
- * multiplayer board should not have to learn it again here.
+ * The party game looks both ways and picks the roomier side, and Heel deliberately does
+ * not. Reversing is the rule a player can apply without thinking, and in a puzzle that is
+ * the whole point — every tick has to be predictable several moves ahead or you are
+ * guessing rather than planning.
+ *
+ * It is also the rule that would be *wrong* on the party board, for a reason that inverts
+ * here. There, reversing collapses a dog's path to a single row and loop detection culls
+ * it (DESIGN.md §4.6). Here the oscillation is a feature: a dog bouncing between two walls
+ * is a dog holding still and waiting, and the player is the thing that breaks the loop, at
+ * the moment of their choosing, with a tile.
  */
-function turnAtWall(level, run) {
-  const sight = (dir) => {
-    let n = 0;
-    let cx = run.x;
-    let cy = run.y;
-    for (;;) {
-      cx += DIRS[dir].dx;
-      cy += DIRS[dir].dy;
-      if (!walkable(level, cx, cy)) return n;
-      n += 1;
-      if (n >= Math.max(level.width, level.height)) return n;
-    }
-  };
-  const right = (run.dir + 1) % 4;
-  const left = (run.dir + 3) % 4;
-  return sight(left) > sight(right) ? left : right;
-}
+const turnAtWall = (run) => (run.dir + 2) % 4;
 
 /**
  * Advance one tick. Mutates `run` and returns it.
@@ -163,7 +154,7 @@ export function step(level, run) {
 
   if (!walkable(level, tx, ty)) {
     // Blocked: the dog turns and the tick is spent. A jump into a wall simply fails.
-    run.dir = turnAtWall(level, run);
+    run.dir = turnAtWall(run);
   } else {
     run.x = tx;
     run.y = ty;

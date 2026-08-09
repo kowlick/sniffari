@@ -81,15 +81,35 @@ export function difficultyFor(level) {
 
 const inBounds = (g, x, y) => y >= 0 && y < g.length && x >= 0 && x < g[0].length;
 
-/** An open room with a handful of blocks in it. Same philosophy as the party board. */
+/**
+ * A park with streets cut through it.
+ *
+ * Grass by default, because a board that is mostly grass reads as a park and the streets
+ * then mean something. The earlier version scattered grass at random over asphalt, which
+ * gave a board with a lot of texture and no *structure* — nothing on it told you anything.
+ * A street is a straight run, so it also gives the dog obvious long lanes to travel down.
+ */
 function layout(rng, size, hazards) {
-  const g = Array.from({ length: size }, () => new Array(size).fill('.'));
+  const g = Array.from({ length: size }, () => new Array(size).fill(','));
   for (let i = 0; i < size; i++) {
     g[0][i] = WALL;
     g[size - 1][i] = WALL;
     g[i][0] = WALL;
     g[i][size - 1] = WALL;
   }
+
+  // One or two streets, straight across, never adjacent to the fence.
+  const streets = 1 + (rng() < 0.55 ? 1 : 0);
+  for (let i = 0; i < streets; i++) {
+    const horiz = rng() < 0.5;
+    const at = 2 + Math.floor(rng() * Math.max(1, size - 4));
+    for (let j = 1; j < size - 1; j++) {
+      if (horiz) g[at][j] = '.';
+      else g[j][at] = '.';
+    }
+  }
+
+  // A few blocks. Kept off the fence line so the border reads as one clean boundary.
   const blocks = 1 + Math.floor(rng() * Math.max(1, Math.floor((size - 4) / 2)));
   for (let b = 0; b < blocks; b++) {
     const w = 1 + Math.floor(rng() * 2);
@@ -99,9 +119,7 @@ function layout(rng, size, hazards) {
     for (let dy = 0; dy < h; dy++)
       for (let dx = 0; dx < w; dx++) if (inBounds(g, x + dx, y + dy)) g[y + dy][x + dx] = WALL;
   }
-  // A little grass, purely so the board is not a grey slab.
-  for (let y = 1; y < size - 1; y++)
-    for (let x = 1; x < size - 1; x++) if (g[y][x] === '.' && rng() < 0.22) g[y][x] = ',';
+
   if (hazards) {
     for (let i = 0; i < 2; i++) {
       const x = 1 + Math.floor(rng() * (size - 2));
@@ -119,25 +137,54 @@ const openCells = (g) => {
   return out;
 };
 
-/** A closed loop for a patrolling dog: out along a line and back again. */
-function patrolRoute(rng, g) {
+/**
+ * A patrolling dog: walk forwards until a wall, turn around, repeat. Forever.
+ *
+ * Stored as the resulting cycle of squares rather than as a position and a heading, so the
+ * renderer can draw the whole route and `patrolAt` stays a lookup. But the *rule* is the
+ * simple one, and it is the same rule the player's own dog follows — one behaviour to learn,
+ * applied to every dog on the board.
+ */
+function bouncePatrol(rng, g) {
   const cells = openCells(g);
   if (!cells.length) return null;
+  const step = [
+    { dx: 0, dy: -1 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: -1, dy: 0 },
+  ];
+  const open = (x, y) => inBounds(g, x, y) && (g[y][x] === '.' || g[y][x] === ',');
+
   for (let attempt = 0; attempt < 40; attempt++) {
-    const startCell = cells[Math.floor(rng() * cells.length)];
-    const horiz = rng() < 0.5;
-    const len = 2 + Math.floor(rng() * 3);
-    const line = [];
-    for (let i = 0; i < len; i++) {
-      const x = startCell.x + (horiz ? i : 0);
-      const y = startCell.y + (horiz ? 0 : i);
-      if (!inBounds(g, x, y) || (g[y][x] !== '.' && g[y][x] !== ',')) break;
-      line.push({ x, y });
+    const from = cells[Math.floor(rng() * cells.length)];
+    let x = from.x;
+    let y = from.y;
+    let dir = Math.floor(rng() * 4);
+
+    const route = [];
+    const seen = new Set();
+    for (let i = 0; i < 200; i++) {
+      const key = `${x},${y},${dir}`;
+      if (seen.has(key)) break;
+      seen.add(key);
+      route.push({ x, y });
+      const nx = x + step[dir].dx;
+      const ny = y + step[dir].dy;
+      if (open(nx, ny)) {
+        x = nx;
+        y = ny;
+      } else {
+        dir = (dir + 2) % 4;
+        // Nowhere to go in either direction: this dog is in a cupboard, not on patrol.
+        if (!open(x + step[dir].dx, y + step[dir].dy)) {
+          route.length = 0;
+          break;
+        }
+      }
     }
-    if (line.length < 2) continue;
-    // Out and back, so the loop is even and the dog is where you expect it.
-    const back = line.slice(1, -1).reverse();
-    return { route: [...line, ...back], phase: Math.floor(rng() * (line.length + back.length)) };
+    // A route of one or two squares is a dog jiggling on the spot, which reads as a bug.
+    if (route.length >= 4) return { route, phase: Math.floor(rng() * route.length) };
   }
   return null;
 }
@@ -157,7 +204,7 @@ function candidate(seed, spec) {
 
   const patrols = [];
   for (let i = 0; i < spec.patrols; i++) {
-    const p = patrolRoute(rng, g);
+    const p = bouncePatrol(rng, g);
     // A patrol that starts on top of the dog, or camped on the parent, is not a puzzle.
     if (!p) continue;
     if (p.route.some((c) => Math.abs(c.x - start.x) + Math.abs(c.y - start.y) <= 1)) continue;

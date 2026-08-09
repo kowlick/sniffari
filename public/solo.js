@@ -9,27 +9,21 @@
  * the solver proved solvable cannot disagree. See src/shared/puzzle-rules.mjs.
  */
 
+import { OUTCOME, createRun, patrolAt, step, tap } from '/shared/puzzle-rules.mjs';
 import {
-  DIRS,
-  OUTCOME,
-  createRun,
-  patrolAt,
-  step,
-  tap,
-  tapTarget,
-} from '/shared/puzzle-rules.mjs';
-import {
+  drawHedge,
   drawDog,
+  drawDrain,
+  drawFence,
   drawGround,
+  drawLake,
   drawPerson,
   drawPlacedTile,
+  drawSquirrel,
   drawWordmark,
   dogSheet,
   entitySheet,
   peopleSheet,
-  drawDrain,
-  drawLake,
-  drawSquirrel,
 } from './sprites.js';
 import { whenReady } from './atlas.js';
 
@@ -48,6 +42,25 @@ let lastTickAt = 0;
 /** Where the dog was at the end of the previous tick, so movement can be interpolated. */
 let prev = null;
 let flash = null;
+
+/**
+ * Breed art, from the same `/dogs.json` the party game uses.
+ *
+ * `atlasRow` is the index into that list and is what selects a row of the sprite sheet —
+ * without it `drawDog` silently falls back to the procedural art, which is the fallback for
+ * a missing sheet rather than a style choice.
+ */
+let YOURS = {};
+let THEIRS = {};
+
+async function loadBreeds() {
+  const dogs = await (await fetch('/dogs.json')).json();
+  dogs.forEach((d, i) => (d.atlasRow = i));
+  // The Cockapoo is the one you walk. The other dogs get the wolfhound: much bigger, much
+  // greyer, and unmistakably not yours at a glance.
+  YOURS = dogs.find((d) => d.id === 'cockapoo') ?? dogs[0];
+  THEIRS = dogs.find((d) => d.id === 'wolfhound') ?? dogs[1];
+}
 
 const saved = () => {
   try {
@@ -208,11 +221,31 @@ function render(now = performance.now()) {
   const s = canvas.width / level.width;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Terrain.
+  // Terrain. Walls came out looking exactly like walkable street, which on a board whose
+  // whole subject is where a dog can and cannot go is the worst thing they could look like.
   for (let y = 0; y < level.height; y++) {
     for (let x = 0; x < level.width; x++) {
       const ch = level.terrain[y][x];
-      drawGround(ctx, ch === 'P' ? '.' : ch, x * s, y * s, s, x, y);
+      if (ch !== '#') {
+        drawGround(ctx, ch === 'P' ? ',' : ch, x * s, y * s, s, x, y);
+        continue;
+      }
+      const border = x === 0 || y === 0 || x === level.width - 1 || y === level.height - 1;
+      if (border) {
+        // The park railings. Drawn along the ring rather than as a block, so the boundary
+        // reads as something you are inside rather than as more scenery.
+        ctx.fillStyle = '#1a1e25';
+        ctx.fillRect(x * s, y * s, s, s);
+        drawFence(ctx, x * s, y * s, s, x === 0 || x === level.width - 1);
+      } else {
+        // A hedge, not a building. The party game's blocks are lit apartment buildings,
+        // which on a board of grass and footpaths look like they wandered in from another
+        // game entirely.
+        drawHedge(ctx, x * s, y * s, s, x, y, {
+          n: level.terrain[y - 1]?.[x] !== '#',
+          s: level.terrain[y + 1]?.[x] !== '#',
+        });
+      }
     }
   }
   for (let y = 0; y < level.height; y++) {
@@ -226,31 +259,44 @@ function render(now = performance.now()) {
 
   drawPatrolRoutes(s);
 
-  // The parent. The thing the whole level is about, so it gets a ring.
+  // The parent — the entire point of the level, and previously the least visible thing on
+  // the board. A warm pool of light under the square, a ring that breathes, and an arrow
+  // above so it can be found without hunting.
   const g = level.goal;
+  const gx = g.x * s + s / 2;
+  const gy = g.y * s + s / 2;
   ctx.save();
+  const glow = ctx.createRadialGradient(gx, gy + s * 0.2, s * 0.1, gx, gy + s * 0.2, s * 0.85);
+  glow.addColorStop(0, 'rgba(255,212,94,0.30)');
+  glow.addColorStop(1, 'rgba(255,212,94,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(g.x * s - s, g.y * s - s, s * 3, s * 3);
   ctx.strokeStyle = '#ffd45e';
-  ctx.lineWidth = Math.max(2, s * 0.06);
-  ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 400);
+  ctx.lineWidth = Math.max(2.5, s * 0.075);
+  ctx.globalAlpha = 0.65 + 0.35 * Math.sin(now / 400);
   ctx.beginPath();
-  ctx.arc(g.x * s + s / 2, g.y * s + s * 0.78, s * 0.34, 0, Math.PI * 2);
+  ctx.arc(gx, g.y * s + s * 0.8, s * 0.4, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
+
   drawPerson(ctx, g.x * s, g.y * s, s, g.x, g.y, 'idle', Math.floor(now / 200) % 4);
+
+  ctx.save();
+  ctx.fillStyle = '#ffd45e';
+  ctx.globalAlpha = 0.85;
+  const bob = Math.sin(now / 400) * s * 0.05;
+  ctx.beginPath();
+  ctx.moveTo(gx, g.y * s - s * 0.02 + bob);
+  ctx.lineTo(gx - s * 0.16, g.y * s - s * 0.28 + bob);
+  ctx.lineTo(gx + s * 0.16, g.y * s - s * 0.28 + bob);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 
   // Tiles the player has dropped and the dog has not reached yet.
   for (const [k, kind] of run.tiles) {
     const [tx, ty] = k.split(',').map(Number);
     drawPlacedTile(ctx, kind, tx * s, ty * s, s, '#f4a259', 1);
-  }
-
-  // Where the next tap would land.
-  const target = tapTarget(level, run);
-  if (target && run.outcome === OUTCOME.RUNNING) {
-    ctx.save();
-    ctx.globalAlpha = 0.35 + 0.25 * Math.sin(now / 260);
-    drawPlacedTile(ctx, target.kind, target.x * s, target.y * s, s, '#8fd4ff', 1);
-    ctx.restore();
   }
 
   drawPatrols(s, now);
@@ -287,12 +333,16 @@ function drawPatrols(s, now) {
     const to = patrolAt(patrol, t);
     const x = (from.x + (to.x - from.x) * into) * s;
     const y = (from.y + (to.y - from.y) * into) * s;
-    // A different breed and a red collar, so "not your dog" reads instantly.
+    // Faces where it is *going*, taken from the next tick rather than the last one. Derived
+    // from the previous tick it stood facing north whenever the board was paused, which is
+    // exactly when a player is studying it to work out where it will be.
+    const ahead = patrolAt(patrol, t + 1);
+    const dir =
+      ahead.x > to.x ? 1 : ahead.x < to.x ? 3 : ahead.y > to.y ? 2 : ahead.y < to.y ? 0 : 2;
     drawDog(ctx, x, y, s, {
-      spec: { ear: 'perky', furStyle: 'wire', tail: 'plume', scale: 0.92 },
+      spec: THEIRS,
       color: '#e8503a',
-      fur: '#7d7468',
-      dir: 2,
+      dir,
       gait: (now / 500) % 1,
       moving: true,
     });
@@ -326,9 +376,8 @@ function drawTheDog(s, now) {
   const x = (prev.x + (run.x - prev.x) * into) * s;
   const y = (prev.y + (run.y - prev.y) * into) * s;
   drawDog(ctx, x, y, s, {
-    spec: { ear: 'floppy', furStyle: 'curly', tail: 'curl', scale: 0.9 },
-    color: '#4a8fe0',
-    fur: '#f2e4c8',
+    spec: YOURS,
+    color: YOURS.color ?? '#e8503a',
     dir: run.dir,
     gait: (now / 420) % 1,
     moving: playing && run.outcome === OUTCOME.RUNNING,
@@ -407,7 +456,12 @@ function toast(text) {
 }
 
 drawWordmark($('wordmark'), 'Sniffari', 30);
-await Promise.all([whenReady(dogSheet), whenReady(peopleSheet), whenReady(entitySheet)]);
+await Promise.all([
+  loadBreeds(),
+  whenReady(dogSheet),
+  whenReady(peopleSheet),
+  whenReady(entitySheet),
+]);
 
 const startAt = Number(new URLSearchParams(location.search).get('level')) || saved().reached || 1;
 await load(Math.max(1, startAt));

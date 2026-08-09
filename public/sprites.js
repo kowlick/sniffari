@@ -255,6 +255,43 @@ export function drawBuilding(ctx, px, py, s, x, y, edges) {
   }
 }
 
+/**
+ * A hedge — an obstacle that belongs in a park.
+ *
+ * The solo puzzle reuses the party game's buildings for its interior walls, and on a board
+ * that is otherwise grass and footpaths an apartment block with lit windows looks like it
+ * wandered in from a different game. A hedge says "you cannot walk here" using the same
+ * vocabulary as the rest of the scene.
+ *
+ * `edges` marks which sides face open ground, so only the exposed faces get the light top
+ * and the shadow — a run of hedge reads as one mass rather than as a row of cubes.
+ */
+export function drawHedge(ctx, px, py, s, x, y, edges = {}) {
+  const h = hash(x, y);
+  const base = ['#2c5c39', '#2f6440', '#275233'][h % 3];
+  ctx.fillStyle = base;
+  ctx.fillRect(px, py, s, s);
+
+  // Foliage: a scatter of lighter blobs, fixed per tile so it never shimmers.
+  for (let i = 0; i < 7; i++) {
+    const bx = px + s * (0.12 + ((h >> (i * 3)) % 9) * 0.085);
+    const by = py + s * (0.12 + ((h >> (i * 2 + 1)) % 9) * 0.085);
+    ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.16)';
+    ctx.beginPath();
+    ctx.arc(bx, by, s * 0.13, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (edges.n) {
+    ctx.fillStyle = 'rgba(190,255,205,0.18)';
+    ctx.fillRect(px, py, s, s * 0.14);
+  }
+  if (edges.s) {
+    ctx.fillStyle = 'rgba(0,0,0,0.34)';
+    ctx.fillRect(px, py + s * 0.86, s, s * 0.14);
+  }
+}
+
 export function drawFence(ctx, px, py, s, vertical) {
   ctx.save();
   ctx.translate(px + s / 2, py + s / 2);
