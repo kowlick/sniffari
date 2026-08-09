@@ -34,12 +34,13 @@ const STORE = 'sniffari.solo';
 /**
  * Milliseconds per tile.
  *
- * Two seconds is a stroll, and deliberately so. The whole tick is a tap window — the tile
- * drops on the square she is walking onto, right up until she reaches the middle of it —
- * so this is also how long you get to decide. At 620ms that was a reaction test; at 2000ms
- * there is time to look at where the other dogs will be and then act.
+ * The whole tick is a tap window — the tile drops on the square she is walking onto, right
+ * up until she reaches the middle of it — so this is also how long you get to decide. 620ms
+ * was a reaction test; two seconds had time to think but made a failed attempt drag. 1.5s
+ * is the walking pace the party game plays its rounds at, which is not a coincidence: it is
+ * the speed a dog crossing a tile looks right at.
  */
-const TICK_MS = 2000;
+const TICK_MS = 1500;
 
 let level = null;
 let run = null;
