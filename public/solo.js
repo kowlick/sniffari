@@ -371,8 +371,6 @@ function render(now = performance.now()) {
   ctx.stroke();
   ctx.restore();
 
-  drawPerson(ctx, g.x * s, g.y * s, s, g.x, g.y, 'idle', Math.floor(now / 200) % 4);
-
   ctx.save();
   ctx.fillStyle = '#ffd45e';
   ctx.globalAlpha = 0.85;
@@ -405,8 +403,7 @@ function render(now = performance.now()) {
   }
 
   drawSolution(s, now);
-  drawPatrols(s, now);
-  drawTheDog(s, now);
+  drawActors(s, now);
   drawFlash(s, now);
   drawHearts(s, now);
   ctx.restore();
@@ -443,46 +440,88 @@ function drawEdgeWarning(s, now) {
   ctx.restore();
 }
 
-function drawPatrols(s, now) {
+/**
+ * Everything standing on the ground, drawn back to front.
+ *
+ * Sprites are taller than their tile and overhang the one behind, so whoever is further up
+ * the screen has to be painted first. Drawing the patrols in list order and the player last
+ * meant a wolfhound standing behind her was painted over her — a dog two rows up looming in
+ * front of one two rows down, which reads as the board being flat and wrong at the same
+ * time. Sorting by the foot line is all it takes.
+ *
+ * The parent joins the sort for the same reason. Only her pool of light and ring stay
+ * underneath everything, being marks on the grass rather than things standing on it.
+ */
+function drawActors(s, now) {
+  const into = playing && walkingTo ? Math.min(1, (now - lastTickAt) / TICK_MS) : 0;
+  const actors = [];
+
+  const g = level.goal;
+  actors.push({
+    y: g.y * s,
+    draw: () => drawPerson(ctx, g.x * s, g.y * s, s, g.x, g.y, 'idle', Math.floor(now / 200) % 4),
+  });
+
   const t = run.tick;
-  const into = playing ? Math.min(1, (now - lastTickAt) / TICK_MS) : 0;
   for (const patrol of level.patrols) {
-    // Same clock as the dog: standing on tick t and walking toward t+1, so what you see
-    // beside her is what the rules will compare her against when this walk lands.
+    // Standing on tick t and walking toward t+1, the same clock the dog is on, so what you
+    // see beside her is what the rules will compare her against when this walk lands.
     const from = patrolAt(patrol, t);
     const to = patrolAt(patrol, t + 1);
     const x = (from.x + (to.x - from.x) * into) * s;
     const y = (from.y + (to.y - from.y) * into) * s;
-    // Faces where it is *going*, taken from the next tick rather than the last one. Derived
-    // from the previous tick it stood facing north whenever the board was paused, which is
-    // exactly when a player is studying it to work out where it will be.
     const dir =
       to.x > from.x ? 1 : to.x < from.x ? 3 : to.y > from.y ? 2 : to.y < from.y ? 0 : 2;
-    drawDog(ctx, x, y, s, {
-      spec: THEIRS,
-      color: '#e8503a',
-      dir,
-      gait: (now / 500) % 1,
-      moving: true,
+    actors.push({
+      y,
+      draw: () =>
+        drawDog(ctx, x, y, s, {
+          spec: THEIRS,
+          color: '#e8503a',
+          dir,
+          gait: (now / 500) % 1,
+          moving: true,
+        }),
     });
   }
-}
 
-function drawTheDog(s, now) {
   // She is drawn walking *from* her logical square toward the next one, which is the whole
   // point: where she appears and where the rules think she is now agree, so a tile dropped
   // "in front of her" lands in front of her.
-  const into = playing && walkingTo ? Math.min(1, (now - lastTickAt) / TICK_MS) : 0;
-  const to = walkingTo ?? run;
-  const x = (run.x + (to.x - run.x) * into) * s;
-  const y = (run.y + (to.y - run.y) * into) * s;
-  drawDog(ctx, x, y, s, {
-    spec: YOURS,
-    color: YOURS.color ?? '#e8503a',
-    dir: run.dir,
-    gait: (now / 420) % 1,
-    moving: playing && run.outcome === OUTCOME.RUNNING,
+  const dest = walkingTo ?? run;
+  const dx = (run.x + (dest.x - run.x) * into) * s;
+  const dy = (run.y + (dest.y - run.y) * into) * s;
+
+  /*
+   * A jump is two squares in one tick, and it should look like one.
+   *
+   * `lift` is the party game's jump, and it does three things at once: the sprite rises off
+   * the ground, it grows (coming toward the camera rather than just sliding), and its
+   * shadow stays put and shrinks. The arc is what sells it, so it applies to every
+   * direction — a north or south jump gets the same rise, which against the linear travel
+   * reads as a hop rather than a longer stride.
+   *
+   * Detected from the distance travelled rather than from `jumpArmed`, which the rules clear
+   * the moment the jump is taken.
+   */
+  const jumping = Math.abs(dest.x - run.x) + Math.abs(dest.y - run.y) > 1;
+  const lift = jumping ? Math.sin(Math.PI * into) * 0.5 : 0;
+
+  actors.push({
+    y: dy,
+    draw: () =>
+      drawDog(ctx, dx, dy, s, {
+        spec: YOURS,
+        color: YOURS.color ?? '#e8503a',
+        dir: run.dir,
+        gait: (now / 420) % 1,
+        moving: playing && run.outcome === OUTCOME.RUNNING,
+        lift,
+      }),
   });
+
+  actors.sort((a, b) => a.y - b.y);
+  for (const a of actors) a.draw();
 }
 
 /** A handful of hearts over the parent, drifting up and fading. */
