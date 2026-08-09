@@ -402,7 +402,7 @@ function render(now = performance.now()) {
     ctx.restore();
   }
 
-  drawSolution(s);
+  drawSolution(s, now);
   drawPatrols(s, now);
   drawTheDog(s, now);
   drawFlash(s, now);
@@ -522,13 +522,33 @@ function drawHearts(s, now) {
  *
  * A development aid, and it looks like one on purpose — nothing here tries to be subtle.
  */
-function drawSolution(s) {
+function drawSolution(s, now) {
   if (!revealed) return;
-  ctx.save();
+
+  /*
+   * A square can be used twice.
+   *
+   * Tiles are single use, so once she has walked over one the square is free again and a
+   * later tile can land on the same spot. Drawn all at once that reads as one tile — the
+   * last one drawn simply covers the others, and its number covers theirs, so the answer
+   * silently loses a step. Squares with more than one tile cycle instead, at the pace she
+   * walks, with a row of pips saying how many are taking turns.
+   */
+  const bySquare = new Map();
   revealed.placements.forEach((p, i) => {
+    const k = `${p.x},${p.y}`;
+    if (!bySquare.has(k)) bySquare.set(k, []);
+    bySquare.get(k).push({ ...p, order: i + 1 });
+  });
+
+  ctx.save();
+  for (const stack of bySquare.values()) {
+    const p = stack[Math.floor(now / TICK_MS) % stack.length];
+
     ctx.globalAlpha = 0.55;
     drawPlacedTile(ctx, p.kind, p.x * s, p.y * s, s, '#8fd4ff', 1);
     ctx.globalAlpha = 1;
+
     ctx.fillStyle = '#0b0d11';
     ctx.beginPath();
     ctx.arc(p.x * s + s * 0.8, p.y * s + s * 0.2, s * 0.17, 0, Math.PI * 2);
@@ -537,8 +557,21 @@ function drawSolution(s) {
     ctx.font = `700 ${s * 0.24}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(i + 1), p.x * s + s * 0.8, p.y * s + s * 0.21);
-  });
+    ctx.fillText(String(p.order), p.x * s + s * 0.8, p.y * s + s * 0.21);
+
+    if (stack.length > 1) {
+      // One pip per tile that shares this square, the current one filled in.
+      const gap = s * 0.13;
+      const left = p.x * s + s / 2 - (gap * (stack.length - 1)) / 2;
+      const y = p.y * s + s * 0.88;
+      stack.forEach((q, i) => {
+        ctx.beginPath();
+        ctx.arc(left + i * gap, y, s * 0.045, 0, Math.PI * 2);
+        ctx.fillStyle = q === p ? '#8fd4ff' : 'rgba(143,212,255,0.3)';
+        ctx.fill();
+      });
+    }
+  }
   ctx.restore();
 }
 
