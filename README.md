@@ -24,6 +24,11 @@ The server prints a join URL and a board URL. Players open the join URL on a pho
 laptop, type a name, and they're in — there is no room code, because there is one game per
 server and everyone is on the same Wi-Fi. Put the board URL on a TV if you have one.
 
+**Playing on your own.** `/solo` is Heel: the dog walks by itself, you have one button, and
+tapping drops the next tile from the queue in front of her. Get her to her parent. Levels are
+generated from their number and go on forever, so level 30 is the same board for everyone —
+which means a solution is worth sharing (it is just the list of ticks you tapped on).
+
 The board size is chosen by how many of you there are: 10×10 for 2–3 players, 13×13 for
 4–5, 16×16 for 6–8.
 

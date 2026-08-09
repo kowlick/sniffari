@@ -728,3 +728,105 @@ button.claim.armed {
     gap: 8px;
   }
 }
+
+/* --- Heel, the solo puzzle ------------------------------------------------------------ */
+
+/* The board is the game; the panel is a sidebar of information about it. */
+.solo .boardwrap {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+}
+.solo #board {
+  position: static;
+  transform: none;
+}
+
+/* The queue reads left to right: spent, next, waiting. The "next" one is what the button
+   will drop, so it is the only one that gets colour. */
+.queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.qtile {
+  min-width: 38px;
+  padding: 6px 10px;
+  text-align: center;
+  font-size: 19px;
+  line-height: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #23282f;
+  color: var(--muted);
+}
+.qtile.next {
+  border-color: var(--accent);
+  background: #3a2f22;
+  color: #fff;
+  font-weight: 800;
+}
+.qtile.spent {
+  opacity: 0.3;
+  text-decoration: line-through;
+}
+
+/* On a phone this is the only thing you touch while the dog is moving, so it is enormous
+   and it is the same target whether you hit the button or the board. */
+button.drop {
+  font-size: 22px;
+  font-weight: 800;
+  padding: 18px 14px;
+  margin-bottom: 8px;
+}
+.solo-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.solo-row button {
+  flex: 1;
+}
+.solo-row input {
+  width: 5em;
+  font: inherit;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #23282f;
+  color: var(--text);
+}
+
+/* The way into the solo game from the lobby. Sits under Join as an alternative, not as a
+   competing primary action. */
+.solo-link {
+  display: block;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+}
+.solo-link:hover {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.solo-link-title {
+  display: block;
+  font-weight: 700;
+}
+.solo-link-sub {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+a.icon {
+  text-decoration: none;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-size: 15px;
+}

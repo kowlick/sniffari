@@ -8,6 +8,7 @@ import { CONFIG } from '../config.ts';
 import { loadMap } from '../sim/map.ts';
 import { Room, boardRows, type Board, type Connection } from './room.ts';
 import { DOGS, type ClientMessage, type ServerMessage } from './protocol.ts';
+import { buildLevel } from '../puzzle/generate.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -50,6 +51,7 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse) {
   let path = url.pathname;
   if (path === '/') path = '/index.html';
   if (path === '/board') path = '/board.html';
+  if (path === '/solo') path = '/solo.html';
 
   // normalize() collapses any ../ before we join, so requests cannot escape public/.
   const file = join(PUBLIC_DIR, normalize(path));
@@ -90,8 +92,96 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify(DOGS));
     return;
   }
+
+  /**
+   * The solo puzzle's rules, served to the browser.
+   *
+   * `public/` cannot import from `src/` because it is never compiled — but this file is
+   * plain JavaScript with no types to strip, so the browser can load the very same module
+   * the generator and the tests run. That is the whole point: the alternative was a second
+   * copy of the movement rules in `public/`, drifting quietly away from the real one.
+   *
+   * Deliberately one named file rather than a directory mount. Serving `src/` wholesale
+   * would put the server's own source a URL away.
+   */
+  if (req.url === '/shared/puzzle-rules.mjs') {
+    void serveShared(res);
+    return;
+  }
+
+  const level = req.url?.match(/^\/solo\/level\/(\d+)$/);
+  if (level) {
+    void serveLevel(res, Number(level[1]));
+    return;
+  }
+
   void serveStatic(req, res);
 });
+
+async function serveShared(res: ServerResponse) {
+  try {
+    const body = await readFile(join(ROOT, 'src', 'shared', 'puzzle-rules.mjs'));
+    res.writeHead(200, {
+      'content-type': 'text/javascript; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    res.end(body);
+  } catch {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('Not found');
+  }
+}
+
+/**
+ * Levels are expensive to build and free to remember.
+ *
+ * Generating one means rolling candidate boards until the solver agrees the level has the
+ * shape we asked for, which runs from a couple of milliseconds early on to about three
+ * seconds at the hard end. It is also a pure function of the level number, so the answer
+ * can be cached forever and shared by everybody.
+ */
+const levelCache = new Map<number, unknown>();
+
+function levelFor(n: number) {
+  const cached = levelCache.get(n);
+  if (cached) return cached;
+  const built = buildLevel(n);
+  if (built) levelCache.set(n, built);
+  return built;
+}
+
+async function serveLevel(res: ServerResponse, n: number) {
+  if (!Number.isInteger(n) || n < 1 || n > 9999) {
+    res.writeHead(400, { 'content-type': 'text/plain' }).end('No such level');
+    return;
+  }
+  const level = levelFor(n);
+  if (!level) {
+    res.writeHead(500, { 'content-type': 'text/plain' }).end('Could not build that level');
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(level));
+
+  // Build the next two while the player is busy with this one. Generation runs from a
+  // millisecond early on to several seconds at the hard end, and somebody working through
+  // the levels in order should never meet that wait.
+  void prewarmLevels(n + 2, n + 1);
+}
+
+/**
+ * Build the opening levels before anyone asks for them, one per turn of the event loop.
+ *
+ * The first few are quick, but a player who opens the puzzle and waits three seconds for
+ * level one has already formed an opinion. Yielding between them keeps a party game running
+ * on the same thread from stuttering while this happens.
+ */
+async function prewarmLevels(upTo: number, from = 1) {
+  for (let n = from; n <= upTo; n++) {
+    if (levelCache.has(n)) continue;
+    await new Promise((r) => setImmediate(r));
+    levelFor(n);
+  }
+}
 
 // --- websockets -----------------------------------------------------------------------
 

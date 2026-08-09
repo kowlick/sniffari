@@ -100,6 +100,24 @@ legality and the collision rule apply by construction. Both properties have test
 if they stop holding. Difficulty is one engine plus a config block, never a second
 algorithm; `npm run ai-tourney` is what decides whether the ladder actually orders.
 
+**`src/shared/` + `src/puzzle/` — Heel, the solo puzzle.** A different game sharing the
+vocabulary but not the loop: the dog walks on its own, one button drops the next queued tile
+in front of it, and the goal is to reach the parent. Three things carry the design.
+**Levels are a pure function of their number** (`buildLevel`), so the supply is endless and
+level 4,912 is the same board everywhere — which is what makes a shared solution mean
+anything. **A solution is a list of tick numbers**, so `solve.mjs` searches C(ticks, tiles)
+rather than board positions; that is the whole reason this variant can verify uniqueness on
+demand where the placement variant could not. And **`src/shared/puzzle-rules.mjs` is plain
+JavaScript served to the browser** at `/shared/puzzle-rules.mjs`, so the client, the
+generator and the tests run identical bytes — the one sanctioned way around "public/ cannot
+import from src/". Keep that route to named files; mounting `src/` would publish the server.
+
+Two generator invariants worth not breaking: a level must be **unsolvable by never tapping**,
+and its step budget is **cut down to the length of the real route** after solving, or the
+puzzle can be blundered through. Tiles are capped at six because solver cost is combinatorial
+in them — difficulty past that comes from patrols and a tighter budget, which make levels
+harder *and* faster to generate.
+
 **`public/` — rendering only.** The client sends one message per turn and otherwise just
 draws what it is told. It never simulates. `client.js` owns the socket, the DOM and
 playback; `render.js` lays out the board; `sprites.js` holds every piece of artwork;
