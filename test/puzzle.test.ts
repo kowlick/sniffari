@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildLevel, difficultyFor } from '../src/puzzle/generate.mjs';
-import { grade, solutions } from '../src/puzzle/solve.mjs';
+import { findShortcut, grade, solutions } from '../src/puzzle/solve.mjs';
 import {
   OUTCOME,
   createRun,
@@ -193,4 +193,77 @@ test('every schedule the solver reports is a distinct, winning one', () => {
     found.length,
     'the same schedule was reported twice',
   );
+});
+
+/**
+ * The tile count is the level's claim about how hard it is. A board finishable on four of
+ * its six tiles is a four-tile level wearing a six-tile badge — and you find out by
+ * arriving at the parent with arrows still in hand, wondering what they were for.
+ *
+ * Checking that the *intended* route needs all six is not enough: that says one route needs
+ * six, not that no route needs four. So the question is asked the other way round.
+ */
+test('no level can be finished with tiles left in the queue', () => {
+  for (let n = 1; n <= 16; n++) {
+    const level = buildLevel(n)!;
+    const shortcut = findShortcut(level);
+    assert.equal(
+      shortcut,
+      null,
+      `level ${n} can be solved with tiles left over, by tapping on ${shortcut?.join(', ')}`,
+    );
+  }
+});
+
+/**
+ * An arrow pointing the way she is already going does nothing. The rules refuse the
+ * placement outright, which is what stops a level being generated whose answer is "drop
+ * three up arrows in a row".
+ */
+test('a tile that would change nothing cannot be placed', () => {
+  const level = flat([',,,,', ',,,,'], ['E'], { x: 0, y: 0, dir: 1 });
+  const run = createRun(level);
+  assert.equal(tapTarget(level, run), null, 'east, while already heading east');
+
+  // Facing north, the same east arrow is a real turn and goes down fine.
+  const turning = flat([',,,,', ',,,,'], ['E'], { x: 1, y: 1, dir: 0 });
+  const other = createRun(turning);
+  assert.ok(tapTarget(turning, other), 'east, while heading north');
+
+  // A jump is never a no-op: it changes the next move whatever she is doing.
+  const jump = flat([',,,,', ',,,,'], ['J'], { x: 0, y: 0, dir: 1 });
+  assert.ok(tapTarget(jump, createRun(jump)), 'a jump always does something');
+});
+
+test('no level asks for a tile that would change nothing', () => {
+  for (let n = 1; n <= 16; n++) {
+    const level = buildLevel(n)!;
+    const run = createRun(level);
+    const wanted = [...(level.solution ?? [])].sort((a: number, b: number) => a - b);
+    let i = 0;
+    while (run.outcome === OUTCOME.RUNNING && run.tick <= level.stamina + 2) {
+      while (i < wanted.length && wanted[i] === run.tick) {
+        assert.ok(
+          tapTarget(level, run),
+          `level ${n}: the intended solution taps on tick ${run.tick}, which the rules refuse`,
+        );
+        tap(level, run);
+        i++;
+      }
+      step(level, run);
+    }
+    assert.equal(i, wanted.length, `level ${n}: not every intended tap was taken`);
+  }
+});
+
+/**
+ * Uniqueness is the ideal and is not always reachable, so this asserts the *rate* rather
+ * than each level. The generator walls off alternative routes rather than discarding boards
+ * that have them; if that stops working this is what notices.
+ */
+test('most levels have exactly one solution', () => {
+  let unique = 0;
+  const total = 16;
+  for (let n = 1; n <= total; n++) if (buildLevel(n)!.solutions === 1) unique++;
+  assert.ok(unique >= total * 0.7, `only ${unique}/${total} levels have a single solution`);
 });

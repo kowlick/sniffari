@@ -15,6 +15,8 @@ export type PuzzleLevel = {
   stamina: number;
   solutions: number;
   par: number;
+  /** The intended schedule of tap ticks. Served separately, never in the level payload. */
+  solution: number[];
 };
 
 export function difficultyFor(level: number): {

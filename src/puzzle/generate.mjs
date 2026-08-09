@@ -12,7 +12,7 @@
  */
 
 import { GOAL, WALL, replay, solved } from '../shared/puzzle-rules.mjs';
-import { grade } from './solve.mjs';
+import { findShortcut, grade, solutions } from './solve.mjs';
 
 /** mulberry32, the same PRNG the bots use. Seeded, never Math.random. */
 function makeRng(seed) {
@@ -242,12 +242,79 @@ function candidate(seed, spec) {
   };
 }
 
+/** Every square a run actually stands on. Jumped-over squares are not visited. */
+function pathOf(level, taps) {
+  const run = replay(level, taps);
+  return new Set((run.trail ?? []).map((t) => `${t.x},${t.y}`));
+}
+
+/**
+ * Close off the other ways round.
+ *
+ * Accepting or rejecting whole boards leaves uniqueness to luck, and past the early levels
+ * luck runs out — most generated boards have two or three answers. This does what a person
+ * would do instead: look at where the *other* solutions go, and put a hedge in the way.
+ *
+ * A hedge on a square the intended route never stands on cannot disturb that route. She
+ * only ever interacts with a square by moving into it, and if she had moved into it, it
+ * would be on her path. (A jump is checked at the landing square only, so walling the
+ * square she sails over is safe too.) Everything is re-graded afterwards regardless — the
+ * argument is why this usually works, not why it is allowed.
+ *
+ * Squares under a patrol are off limits: patrol routes are precomputed, and a wall dropped
+ * on one would leave a dog walking through a hedge.
+ */
+function carve(level, spec) {
+  const forbidden = new Set([`${level.start.x},${level.start.y}`, `${level.goal.x},${level.goal.y}`]);
+  for (const patrol of level.patrols) for (const c of patrol.route) forbidden.add(`${c.x},${c.y}`);
+
+  const setCell = (x, y, ch) => {
+    const row = level.terrain[y];
+    level.terrain[y] = row.slice(0, x) + ch + row.slice(x + 1);
+  };
+
+  let best = grade(level, 3);
+  for (let pass = 0; pass < 14 && best.count > 1; pass++) {
+    const found = solutions(level, 4);
+    if (found.length <= 1) break;
+    const intended = pathOf(level, found[0]);
+
+    let carved = false;
+    for (const alt of found.slice(1)) {
+      for (const square of pathOf(level, alt)) {
+        if (intended.has(square) || forbidden.has(square)) continue;
+        const [x, y] = square.split(',').map(Number);
+        if (level.terrain[y][x] !== '.' && level.terrain[y][x] !== ',') continue;
+
+        const was = level.terrain[y][x];
+        setCell(x, y, WALL);
+        const after = grade(level, 3);
+        // Keep it only if the level is still the level: same solvable shape, fewer answers.
+        if (after.solvable && after.first.length === spec.tiles && after.count < best.count) {
+          best = after;
+          carved = true;
+          break;
+        }
+        setCell(x, y, was);
+      }
+      if (carved) break;
+    }
+    if (!carved) break;
+  }
+  return best;
+}
+
 /**
  * Is this candidate the level we wanted?
  *
- * Two conditions beyond "has a solution". It must need **every** tile — a level solvable
- * while leaving a tile in the queue is a level whose difficulty is a lie. And it must be
- * unsolvable by doing nothing, or the player learns that the button is optional.
+ * The load-bearing condition is that it must need **every** tile, and checking that the
+ * *intended* solution uses them all is not enough — that only says one route needs six, not
+ * that no route needs four. A board where the dog can stroll home on four of her six tiles
+ * is a four-tile level wearing a six-tile badge, and it is exactly what you notice when you
+ * arrive at the parent with arrows still in hand wondering what they were for.
+ *
+ * So the check is the other way round: is there *any* way to get home with tiles left? One
+ * is enough to throw the board away.
  */
 function shaped(level, spec) {
   if (solved(level, replay(level, []))) return null;
@@ -278,7 +345,15 @@ function shaped(level, spec) {
   const tight = grade(level, 3);
   if (!tight.solvable) return null;
   if (tight.first.length !== spec.tiles) return null;
-  return tight;
+
+  // Wall off the other routes rather than throwing the board away for having them.
+  const carved = carve(level, spec);
+  if (!carved.solvable || carved.first.length !== spec.tiles) return null;
+
+  // Done last: it is the most expensive question, and carving can introduce a shortcut by
+  // shortening a route it did not mean to touch.
+  if (findShortcut(level)) return null;
+  return carved;
 }
 
 /**
@@ -289,7 +364,7 @@ function shaped(level, spec) {
  * admit exactly one answer get genuinely scarce, and a level with two answers is still a
  * good level — it just has two things worth sharing.
  */
-export function buildLevel(level, { attempts = 400, maxMs = 2500 } = {}) {
+export function buildLevel(level, { attempts = 1200, maxMs = 2500 } = {}) {
   const spec = difficultyFor(level);
   const deadline = Date.now() + maxMs;
   // Seeds are derived from the level number, so every player gets the same board and the
@@ -307,6 +382,7 @@ export function buildLevel(level, { attempts = 400, maxMs = 2500 } = {}) {
     if (!g) continue;
     lv.solutions = g.count;
     lv.par = g.first.length;
+    lv.solution = g.first;
     if (g.unique) return lv;
     // Keep the tidiest near-miss in case nothing unique turns up.
     if (!fallback || g.count < fallback.solutions) fallback = lv;

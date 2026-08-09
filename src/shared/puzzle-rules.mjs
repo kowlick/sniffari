@@ -118,13 +118,27 @@ export function createRun(level) {
  */
 export function tapTarget(level, run) {
   if (run.outcome !== OUTCOME.RUNNING || run.used >= level.queue.length) return null;
+
+  /*
+   * An arrow pointing the way she is already going does nothing at all.
+   *
+   * She travels in a straight line to the square the tile lands on, so her heading when she
+   * gets there is her heading now — and a tile that sets it to what it already is has been
+   * spent on nothing. Refusing the placement is better than allowing it: it keeps a wasted
+   * tile out of the queue, it keeps the solver from reporting solutions padded with
+   * no-ops, and it stops levels being generated whose answer is "drop three up arrows in a
+   * row". A jump is never a no-op; it always changes the next move.
+   */
+  const kind = level.queue[run.used];
+  if (kind !== 'J' && 'NESW'.indexOf(kind) === run.dir) return null;
+
   const distance = run.jumpArmed ? 2 : 1;
   const { dx, dy } = DIRS[run.dir];
   const x = run.x + dx * distance;
   const y = run.y + dy * distance;
   if (!placeable(level, x, y)) return null;
   if (run.tiles.has(`${x},${y}`)) return null;
-  return { x, y, kind: level.queue[run.used] };
+  return { x, y, kind };
 }
 
 /** Drop the next queued tile in front of the dog. Returns the square, or null if refused. */

@@ -79,6 +79,45 @@ export function solutions(level, limit = 2) {
 }
 
 /**
+ * Can the dog get home with tiles still in the queue?
+ *
+ * If she can, the level is broken, however pretty it looks. The tile count is the level's
+ * statement about how hard it is, and a board that can be finished on four of its six tiles
+ * is a four-tile level wearing a six-tile badge — you reach the parent with a fistful of
+ * arrows and no idea what they were for.
+ *
+ * Cheap, because it only ever needs the first one: a single shortcut is enough to reject
+ * the candidate, and most broken boards give one up almost immediately.
+ */
+export function findShortcut(level) {
+  const maxTick = level.stamina + 2;
+  let shortcut = null;
+
+  const walk = (run) => {
+    if (shortcut) return;
+    if (run.outcome !== OUTCOME.RUNNING) {
+      if (run.outcome === OUTCOME.WON && run.used < level.queue.length) shortcut = [...run.taps];
+      return;
+    }
+    if (run.tick > maxTick) return;
+
+    if (run.used < level.queue.length && tapTarget(level, run)) {
+      const withTap = clone(run);
+      tap(level, withTap);
+      step(level, withTap);
+      walk(withTap);
+      if (shortcut) return;
+    }
+    const held = clone(run);
+    step(level, held);
+    walk(held);
+  };
+
+  walk(clone(createRun(level)));
+  return shortcut;
+}
+
+/**
  * Is this level worth shipping?
  *
  * `unique` is the ideal and not always reachable — a level with two solutions is still a

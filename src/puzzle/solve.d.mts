@@ -2,6 +2,7 @@
 import type { PuzzleLevel } from '../shared/puzzle-rules.d.mts';
 
 export function solutions(level: PuzzleLevel, limit?: number): number[][];
+export function findShortcut(level: PuzzleLevel): number[] | null;
 export function grade(
   level: PuzzleLevel,
   limit?: number,

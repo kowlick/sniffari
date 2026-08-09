@@ -9,6 +9,7 @@ import { loadMap } from '../sim/map.ts';
 import { Room, boardRows, type Board, type Connection } from './room.ts';
 import { DOGS, type ClientMessage, type ServerMessage } from './protocol.ts';
 import { buildLevel } from '../puzzle/generate.mjs';
+import { createRun, step, tap, tapTarget } from '../shared/puzzle-rules.mjs';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -115,6 +116,20 @@ const server = createServer((req, res) => {
     return;
   }
 
+  /**
+   * The intended solution, deliberately behind its own URL.
+   *
+   * Keeping it out of the level payload means a curious player has to go looking rather
+   * than find the answer sitting in the response to the board they are staring at. It is a
+   * development aid; when it stops being one, delete this route and the button that calls
+   * it and nothing else changes.
+   */
+  const answer = req.url?.match(/^\/solo\/level\/(\d+)\/solution$/);
+  if (answer) {
+    void serveSolution(res, Number(answer[1]));
+    return;
+  }
+
   void serveStatic(req, res);
 });
 
@@ -166,6 +181,40 @@ async function serveLevel(res: ServerResponse, n: number) {
   // millisecond early on to several seconds at the hard end, and somebody working through
   // the levels in order should never meet that wait.
   void prewarmLevels(n + 2, n + 1);
+}
+
+/**
+ * Where each tile of the intended solution ends up, and on which tick.
+ *
+ * Replayed rather than stored: a schedule of tap ticks is the canonical form of a solution,
+ * and the squares fall out of walking it. Storing both would be storing the same fact twice.
+ */
+async function serveSolution(res: ServerResponse, n: number) {
+  const level = levelFor(n) as {
+    solution?: number[];
+    queue: string[];
+  } | null;
+  if (!level?.solution) {
+    res.writeHead(404, { 'content-type': 'text/plain' }).end('No solution recorded');
+    return;
+  }
+
+  const run = createRun(level as never);
+  const placements: { x: number; y: number; kind: string; tick: number }[] = [];
+  const wanted = [...level.solution].sort((a, b) => a - b);
+  let i = 0;
+  for (let guard = 0; guard < 500 && run.outcome === 'running'; guard++) {
+    while (i < wanted.length && wanted[i] === run.tick) {
+      const target = tapTarget(level as never, run);
+      if (target) placements.push({ ...target, tick: run.tick });
+      tap(level as never, run);
+      i++;
+    }
+    step(level as never, run);
+  }
+
+  res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  res.end(JSON.stringify({ taps: level.solution, placements }));
 }
 
 /**

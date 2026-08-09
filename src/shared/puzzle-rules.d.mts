@@ -18,6 +18,7 @@ export type PuzzleLevel = {
   stamina: number;
   solutions: number;
   par: number;
+  solution?: number[];
 };
 
 export type Run = {
@@ -44,6 +45,7 @@ export const OUTCOME: {
   LOST_HAZARD: string;
   LOST_DOG: string;
   LOST_TIRED: string;
+  LOST_ESCAPED: string;
 };
 
 export function placeable(level: PuzzleLevel, x: number, y: number): boolean;

@@ -50,6 +50,11 @@ let lastTickAt = 0;
  */
 let walkingTo = null;
 let flash = null;
+/** Little rising hearts when she gets home. Cleared on reset. */
+let hearts = [];
+/** The intended answer, once it has been asked for. Never arrives unbidden. */
+let revealed = null;
+let advanceAt = 0;
 
 /**
  * Breed art, from the same `/dogs.json` the party game uses.
@@ -101,6 +106,9 @@ function reset() {
   run = createRun(level);
   walkingTo = null;
   playing = false;
+  hearts = [];
+  revealed = null;
+  advanceAt = 0;
   flash = null;
   lastTickAt = 0;
   $('next').classList.add('hidden');
@@ -135,6 +143,24 @@ function drop() {
   }
   renderQueue();
 }
+
+/**
+ * Ask the server what it had in mind.
+ *
+ * Fetched on demand rather than shipped with the level, so the answer is not sitting in the
+ * response to the board you are looking at. Purely for building the thing.
+ */
+$('reveal')?.addEventListener('click', async () => {
+  if (revealed) {
+    revealed = null;
+    $('reveal').textContent = 'Show the solution';
+    return;
+  }
+  const res = await fetch(`/solo/level/${level.level}/solution`);
+  if (!res.ok) return toast('No solution recorded for this level.');
+  revealed = await res.json();
+  $('reveal').textContent = `Hide (taps on ${revealed.taps.join(', ')})`;
+});
 
 $('drop').addEventListener('click', drop);
 $('retry').addEventListener('click', reset);
@@ -198,6 +224,10 @@ function beginWalk(now) {
 }
 
 function frame(now) {
+  if (advanceAt && now >= advanceAt) {
+    advanceAt = 0;
+    void load(level.level + 1);
+  }
   if (playing && now - lastTickAt >= TICK_MS) {
     // The walk we have been showing is over, so make it real.
     step(level, run);
@@ -221,6 +251,10 @@ function finish() {
       remember({ reached: Math.max(saved().reached, level.level + 1) });
       $('next').classList.remove('hidden');
       $('share').classList.remove('hidden');
+      burstHearts();
+      // Straight on to the next one. Long enough to watch the hearts and register that she
+      // made it; short enough that the game never asks you to press anything to keep going.
+      advanceAt = performance.now() + 2200;
     } else {
       // Reaching the parent with tiles still in hand is not the intended route. The level
       // was built so that every tile is needed, so this means a shortcut nobody planned.
@@ -306,7 +340,6 @@ function render(now = performance.now()) {
   }
 
   drawEdgeWarning(s, now);
-  drawPatrolRoutes(s);
 
   // The parent — the entire point of the level, and previously the least visible thing on
   // the board. A warm pool of light under the square, a ring that breathes, and an arrow
@@ -361,9 +394,11 @@ function render(now = performance.now()) {
     ctx.restore();
   }
 
+  drawSolution(s);
   drawPatrols(s, now);
   drawTheDog(s, now);
   drawFlash(s, now);
+  drawHearts(s, now);
   ctx.restore();
   renderQueue();
   updateMeta();
@@ -394,25 +429,6 @@ function drawEdgeWarning(s, now) {
     grad.addColorStop(1, 'rgba(255,150,90,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(x, y, bw, bh);
-  }
-  ctx.restore();
-}
-
-/** Patrol routes are drawn in full: this is a planning game, not a memory test. */
-function drawPatrolRoutes(s) {
-  ctx.save();
-  for (const patrol of level.patrols) {
-    ctx.strokeStyle = 'rgba(255,120,120,0.35)';
-    ctx.lineWidth = Math.max(1.5, s * 0.05);
-    ctx.setLineDash([s * 0.14, s * 0.12]);
-    ctx.beginPath();
-    patrol.route.forEach((c, i) => {
-      const px = c.x * s + s / 2;
-      const py = c.y * s + s / 2;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    });
-    ctx.stroke();
   }
   ctx.restore();
 }
@@ -457,6 +473,65 @@ function drawTheDog(s, now) {
     gait: (now / 420) % 1,
     moving: playing && run.outcome === OUTCOME.RUNNING,
   });
+}
+
+/** A handful of hearts over the parent, drifting up and fading. */
+function burstHearts() {
+  const born = performance.now();
+  hearts = Array.from({ length: 7 }, (_, i) => ({
+    born: born + i * 90,
+    dx: (i - 3) * 0.13 + (i % 2 ? 0.05 : -0.05),
+    scale: 0.55 + (i % 3) * 0.18,
+  }));
+}
+
+function drawHearts(s, now) {
+  if (!hearts.length) return;
+  const g = level.goal;
+  ctx.save();
+  for (const h of hearts) {
+    const age = (now - h.born) / 1500;
+    if (age < 0 || age >= 1) continue;
+    const x = (g.x + 0.5 + h.dx) * s;
+    const y = (g.y + 0.5 - age * 1.5) * s;
+    const r = s * 0.16 * h.scale * (1 + age * 0.25);
+    ctx.globalAlpha = age < 0.15 ? age / 0.15 : 1 - (age - 0.15) / 0.85;
+    ctx.fillStyle = '#ff7a9c';
+    // Two lobes and a point: a heart at eight pixels across needs no more than that.
+    ctx.beginPath();
+    ctx.arc(x - r * 0.5, y - r * 0.35, r * 0.62, Math.PI * 0.9, Math.PI * 2.05);
+    ctx.arc(x + r * 0.5, y - r * 0.35, r * 0.62, Math.PI * 0.95, Math.PI * 2.1);
+    ctx.lineTo(x, y + r);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * The intended answer, drawn on the board: each tile on the square it lands on, numbered in
+ * the order it is dropped.
+ *
+ * A development aid, and it looks like one on purpose — nothing here tries to be subtle.
+ */
+function drawSolution(s) {
+  if (!revealed) return;
+  ctx.save();
+  revealed.placements.forEach((p, i) => {
+    ctx.globalAlpha = 0.55;
+    drawPlacedTile(ctx, p.kind, p.x * s, p.y * s, s, '#8fd4ff', 1);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#0b0d11';
+    ctx.beginPath();
+    ctx.arc(p.x * s + s * 0.8, p.y * s + s * 0.2, s * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#8fd4ff';
+    ctx.font = `700 ${s * 0.24}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(i + 1), p.x * s + s * 0.8, p.y * s + s * 0.21);
+  });
+  ctx.restore();
 }
 
 function drawFlash(s, now) {
