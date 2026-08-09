@@ -78,6 +78,16 @@ export type ServerMessage =
        * longer than the grace period. Any player may then send `claimHost`.
        */
       hostAway: boolean;
+      /**
+       * Epoch ms when the host's seat becomes claimable, or null when the host is here.
+       *
+       * `hostAway` alone left the claim button appearing out of nowhere fifteen seconds
+       * after the host's tab closed, which reads as a bug rather than as a rule. With the
+       * deadline published the client can show the button straight away, counting down, so
+       * the grace period is something you watch elapse rather than something you wait out
+       * without knowing it exists.
+       */
+      hostClaimableAt: number | null;
       /** Only tiles every player is allowed to see. Secret placements are omitted. */
       tiles: WireTile[];
       dogs: DogSnapshot[];

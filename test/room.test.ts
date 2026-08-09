@@ -4,25 +4,15 @@ import { join } from 'node:path';
 import { CONFIG } from '../src/config.ts';
 import { loadMap } from '../src/sim/map.ts';
 import { TILE } from '../src/sim/types.ts';
-import { Room, boardRows, type Board, type Connection } from '../src/server/room.ts';
-import type { ServerMessage } from '../src/server/protocol.ts';
+import { Room, makeBoard, type Board, type Connection } from '../src/server/room.ts';
+import { DOGS, type ServerMessage } from '../src/server/protocol.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const silent: Connection = { send() {} };
 
 async function boards(): Promise<Board[]> {
   return Promise.all(
-    CONFIG.boards.map(async (b) => {
-      const map = await loadMap(join(ROOT, 'maps', b.file), b.name);
-      return {
-        name: b.name,
-        stamina: b.stamina,
-        maxPlayers: b.maxPlayers,
-        size: b.size,
-        map,
-        rows: boardRows(map),
-      };
-    }),
+    CONFIG.boards.map(async (b) => makeBoard(b, await loadMap(join(ROOT, 'maps', b.file), b.name))),
   );
 }
 
@@ -130,6 +120,71 @@ test('only the host sets the match length, and only between matches', async () =
   assert.match(room.setRounds(host.id, 2) ?? '', /already started/i);
 });
 
+/**
+ * How long a round is belongs to the *board*, and the reason is about people rather than
+ * about squares: what a player has to hold in their head before the walk is everyone
+ * else's tiles, so the load is turns x dogs. Five turns of eight dogs is 40 arrows nobody
+ * can track, and the round stops being planned and starts being watched.
+ *
+ * Playback slows the other way, for the same reason — more dogs to follow per tick.
+ */
+test('the board decides how many turns a round runs and how fast the walk plays', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+
+  /** Every seat takes a square nobody has taken yet, then locks. */
+  const playTurn = (room: Room, ids: string[], used: Set<string>) => {
+    for (const id of ids) {
+      let placed = false;
+      for (let y = 0; y < room.map.height && !placed; y++) {
+        for (let x = 0; x < room.map.width && !placed; x++) {
+          if (used.has(`${x},${y}`)) continue;
+          if (room.place(id, x, y, TILE.N) !== null) continue;
+          used.add(`${x},${y}`);
+          placed = true;
+        }
+      }
+      assert.ok(placed, 'the test needs a free square for every seat');
+      assert.equal(room.lock(id), null);
+    }
+  };
+
+  for (const [count, name] of [[2, 'small'], [5, 'medium'], [8, 'large']] as const) {
+    const board = CONFIG.boards.find((b) => b.name === name)!;
+    const walks: Extract<ServerMessage, { t: 'walk' }>[] = [];
+    const conn: Connection = { send: (m) => void (m.t === 'walk' && walks.push(m)) };
+
+    const room = new Room(await boards());
+    const ids = Array.from({ length: count }, (_, i) => {
+      const p = room.addPlayer(`P${i}`, conn) as { id: string };
+      assert.equal(room.pickDog(p.id, DOGS[i]!.id), null);
+      return p.id;
+    });
+    assert.equal(room.board.name, name, `${count} dogs should be on the ${name} board`);
+
+    assert.equal(room.start(ids[0]!), null);
+    t.mock.timers.tick(CONFIG.timers.setupMs);
+
+    const used = new Set<string>();
+    for (let turn = 1; turn <= board.turns; turn++) {
+      assert.equal(room.phase, 'place');
+      assert.equal(room.turn, turn, `${name} should still be placing on turn ${turn}`);
+      playTurn(room, ids, used);
+      if (turn === board.turns) break;
+      assert.equal(room.phase, 'reveal');
+      t.mock.timers.tick(CONFIG.timers.revealMs);
+    }
+
+    assert.equal(room.phase, 'walk', `the ${name} board walks after ${board.turns} turns`);
+    assert.equal(walks.at(-1)!.tickMs, board.secondsPerTile * 1000);
+
+    // The last turn is the secret one however many turns there are: its tiles are the only
+    // ones missing from the payload a client can see.
+    const state = room.stateFor(ids[0]!) as Extract<ServerMessage, { t: 'state' }>;
+    assert.equal(state.tiles.length, count * (board.turns - 1), 'the last turn stayed hidden');
+    assert.equal(state.config.turns, board.turns, 'and the client is told the real number');
+  }
+});
+
 test('the host can end a match early, and scores stand', async () => {
   const room = new Room(await boards());
   const host = seat(room, 'Ada', 'beagle');
@@ -224,6 +279,57 @@ test('claiming is refused while the host is present, and is a no-op for the host
   assert.match(room.claimHost(guest.id) ?? '', /still here/i);
   assert.match(room.claimHost(host.id) ?? '', /already the host/i);
   assert.equal(room.hostId, host.id);
+});
+
+/**
+ * Who holds the seat has to be *visible*. Without it a room waiting on its host says so
+ * without saying on whom, and a player cannot even tell whether the seat is already theirs
+ * — which is exactly the state in which someone goes hunting for a claim button that is
+ * correctly not being offered.
+ */
+test('the roster says who the host is, and when the seat comes up for grabs', async () => {
+  const room = new Room(await boards());
+  const hostConn: Connection = { send() {} };
+  const host = room.addPlayer('Ada', hostConn) as { id: string };
+  const guest = seat(room, 'Bo', 'labrador');
+
+  const seen = () => {
+    const s = room.stateFor(guest.id) as Extract<ServerMessage, { t: 'state' }>;
+    return { s, host: s.players.find((p) => p.isHost) };
+  };
+
+  {
+    const { s, host: marked } = seen();
+    assert.equal(marked?.id, host.id, 'exactly one seat is flagged as the host');
+    assert.equal(s.players.filter((p) => p.isHost).length, 1);
+    assert.equal(s.hostClaimableAt, null, 'and nothing is counting down while they are here');
+  }
+
+  room.dropConnection(hostConn);
+  {
+    const { s } = seen();
+    assert.equal(s.hostAway, false, 'still inside the grace period');
+    assert.ok(s.hostClaimableAt !== null, 'but the client can already show the countdown');
+    const left = s.hostClaimableAt! - Date.now();
+    assert.ok(
+      left > 0 && left <= CONFIG.lobby.hostGraceMs,
+      `the deadline should be within the grace period, got ${left}ms`,
+    );
+  }
+
+  room.hostAwaySince = Date.now() - CONFIG.lobby.hostGraceMs - 1;
+  {
+    const { s } = seen();
+    assert.equal(s.hostAway, true);
+    assert.ok(s.hostClaimableAt! <= Date.now(), 'the deadline has passed, so the button goes live');
+  }
+
+  assert.equal(room.claimHost(guest.id), null);
+  {
+    const { s, host: marked } = seen();
+    assert.equal(marked?.id, guest.id, 'the crown moves with the seat');
+    assert.equal(s.hostClaimableAt, null, 'and the countdown is over');
+  }
 });
 
 // --- computer opponents ---------------------------------------------------------------

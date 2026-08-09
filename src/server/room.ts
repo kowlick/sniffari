@@ -66,6 +66,10 @@ export type Board = {
   maxPlayers: number;
   /** Edge length, used to generate a fresh map of the same shape for a new match. */
   size: number;
+  /** Placements per round, the last of which is the secret turn. Fewer with more dogs. */
+  turns: number;
+  /** Playback speed. Slower on the bigger boards, where there are more dogs to follow. */
+  secondsPerTile: number;
   map: GameMap;
   /** Terrain as strings, precomputed once for the wire format. */
   rows: string[];
@@ -76,6 +80,22 @@ export const boardRows = (map: GameMap): string[] =>
   Array.from({ length: map.height }, (_, y) =>
     map.terrain.slice(y * map.width, (y + 1) * map.width).join(''),
   );
+
+/**
+ * A playable board from its config entry and its loaded map. One function rather than four
+ * object literals, so adding a per-board number does not mean finding every place a Board
+ * is spelled out — the server, the tests and the scripts all come through here.
+ */
+export const makeBoard = (cfg: (typeof CONFIG.boards)[number], map: GameMap): Board => ({
+  name: cfg.name,
+  stamina: cfg.stamina,
+  maxPlayers: cfg.maxPlayers,
+  size: cfg.size,
+  turns: cfg.turns,
+  secondsPerTile: cfg.secondsPerTile,
+  map,
+  rows: boardRows(map),
+});
 
 /**
  * Names for computer opponents. Obviously dogs and obviously not your friends, so nobody
@@ -522,7 +542,7 @@ export class Room {
   /** Called when every player has locked, or when the turn timer runs out. */
   private resolveTurn() {
     const seated = [...this.players.values()].filter((p) => p.dogId);
-    const secret = this.turn === CONFIG.round.secretTurn;
+    const secret = this.turn === this.board.turns;
 
     // A tile sitting on the board unlocked when the timer runs out counts as placed — the
     // player chose a square, they just didn't press the button. Anyone who chose nothing
@@ -568,7 +588,7 @@ export class Room {
     for (const s of this.spectators) s.send(reveal);
 
     this.enter('reveal', CONFIG.timers.revealMs, () =>
-      this.turn >= CONFIG.round.turns ? this.beginWalk() : this.beginTurn(),
+      this.turn >= this.board.turns ? this.beginWalk() : this.beginTurn(),
     );
   }
 
@@ -577,6 +597,7 @@ export class Room {
     const all = new Map<string, PlacedTile>([...this.tiles, ...this.secretTiles]);
     const cfg = { ...CONFIG, sim: { ...CONFIG.sim, stamina: this.board.stamina } };
     const result = simulateWalk(this.map, inits, all, cfg);
+    const tickMs = this.board.secondsPerTile * 1000;
 
     const byDog = new Map(result.scores.map((s) => [s.dogId, s]));
     for (const p of this.players.values()) {
@@ -589,7 +610,7 @@ export class Room {
     const msg: ServerMessage = {
       t: 'walk',
       ticks: result.ticks,
-      tickMs: 1000 / CONFIG.sim.ticksPerSecond,
+      tickMs,
       scores: result.scores.map((s) => ({
         dogId: this.players.get(s.dogId)?.dogId ?? '',
         playerId: s.dogId,
@@ -601,7 +622,7 @@ export class Room {
     for (const s of this.spectators) s.send(msg);
 
     // Hold the phase for as long as playback takes, plus a beat.
-    const playbackMs = result.ticks.length * (1000 / CONFIG.sim.ticksPerSecond) + 1500;
+    const playbackMs = result.ticks.length * tickMs + 1500;
     // Long enough for every dog to take its turn on the podium.
     const placings = [...this.players.values()].filter((p) => p.dogId).length;
     const scoreMs = placings * CONFIG.timers.scorePerPlacingMs + CONFIG.timers.scorePadMs;
@@ -819,6 +840,11 @@ export class Room {
       deadline: this.deadline,
       players,
       hostAway: this.hostAway,
+      // Null while the host is here. When they are gone this is the moment the seat opens,
+      // which the client shows as a countdown rather than a button that appears from
+      // nowhere. `markHostAway` broadcasts again as it passes, so the button goes live.
+      hostClaimableAt:
+        this.hostAwaySince === null ? null : this.hostAwaySince + CONFIG.lobby.hostGraceMs,
       tiles,
       dogs: this.dogs,
       pending: p?.pending ?? null,
@@ -830,9 +856,9 @@ export class Room {
         rows: this.board.rows,
       },
       config: {
-        ticksPerSecond: CONFIG.sim.ticksPerSecond,
+        ticksPerSecond: 1 / this.board.secondsPerTile,
         stamina: this.board.stamina,
-        turns: CONFIG.round.turns,
+        turns: this.board.turns,
         roundsPerMatch: this.roundsPerMatch,
         maxRounds: CONFIG.round.maxRounds,
         minPlayers: CONFIG.lobby.minPlayers,

@@ -98,7 +98,9 @@ export function buildView(state: StateMessage): BotView | null {
     dogId: me.dogId,
     turn: state.turn,
     turnsPerRound: state.config.turns,
-    secretTurn: state.turn === CONFIG.round.secretTurn,
+    // The last turn of however many this board runs. Both numbers are in the payload, so a
+    // bot works this out from exactly what the browser is told.
+    secretTurn: state.turn === state.config.turns,
     map: mapFromRows(state.map.rows, state.map.name),
     dogs: state.dogs,
     tiles,

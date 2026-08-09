@@ -36,7 +36,7 @@ function tilesFor(map: ReturnType<typeof parseMap>, dogs: number, seed: number) 
   const tiles = new Map<string, PlacedTile>();
   const kinds = ['N', 'E', 'S', 'W', 'J'] as const;
   let placed = 0;
-  const want = dogs * CONFIG.round.turns;
+  const want = dogs * board.turns;
   for (let i = 0; placed < want && i < map.width * map.height; i++) {
     const x = (i * 7 + seed * 3) % map.width;
     const y = (i * 11 + seed * 5) % map.height;

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { CONFIG } from '../src/config.ts';
 import { loadMap } from '../src/sim/map.ts';
 import { key, type PlacedTile } from '../src/sim/types.ts';
-import { Room, boardRows, type Board, type Connection } from '../src/server/room.ts';
+import { Room, makeBoard, type Board, type Connection } from '../src/server/room.ts';
 import {
   candidates,
   legalSquares,
@@ -21,17 +21,7 @@ const silent: Connection = { send() {} };
 
 async function boards(): Promise<Board[]> {
   return Promise.all(
-    CONFIG.boards.map(async (b) => {
-      const map = await loadMap(join(ROOT, 'maps', b.file), b.name);
-      return {
-        name: b.name,
-        stamina: b.stamina,
-        maxPlayers: b.maxPlayers,
-        size: b.size,
-        map,
-        rows: boardRows(map),
-      };
-    }),
+    CONFIG.boards.map(async (b) => makeBoard(b, await loadMap(join(ROOT, 'maps', b.file), b.name))),
   );
 }
 

@@ -18,8 +18,8 @@ A **match** is 3 **rounds**. A round is:
 | Setup | Dogs placed on the map, facing the center. Pickups placed. Everyone sees this. | 10s |
 | | *The host picks the match length (1–7 rounds) before starting, and can end a match early.* | |
 | Turn 1 | Each player secretly places 1 tile, chosen freely from ↑ ↓ ← → jump. Reveal at end of turn. | 40s |
-| Turns 2–4 | Same, one tile per turn, revealed at end of each turn. | 30s each |
-| Turn 5 (Secret) | Each player places their last tile. **Not revealed.** | 30s |
+| Middle turns | Same, one tile per turn, revealed at end of each turn. How many there are depends on the board — see §4.1. | 30s each |
+| Last turn (Secret) | Each player places their last tile. **Not revealed.** | 30s |
 | Walk | All dogs walk simultaneously until every dog has stopped. | ~30s |
 | Scoring | Each dog takes the podium in turn — placing, name and score — last place first. | see below |
 
@@ -155,10 +155,21 @@ Guard 1 is the guarantee. Guards 2 and 3 are what keep it from ever being *borin
 
 ### 4.1 Size — **three boards, chosen by player count**
 
-| Board | Size | Tiles | Walkable | Players | Stamina | Walk phase |
-|---|---|---|---|---|---|---|
-| small | 8 × 8 | 64 | ~33 | 1–4 | 18 | ~27s |
-| large | 10 × 10 | 100 | ~58 | 5–8 | 30 | ~45s |
+| Board | Size | Tiles | Walkable | Players | Stamina | Turns | Sec/tile |
+|---|---|---|---|---|---|---|---|
+| small | 8 × 8 | 64 | ~33 | 1–2 | 20 | 5 (4 + secret) | 1.5 |
+| medium | 10 × 10 | 100 | ~58 | 3–5 | 30 | 4 (3 + secret) | 1.8 |
+| large | 12 × 12 | 144 | ~90 | 6–8 | 30 | 3 (2 + secret) | 2.0 |
+
+**Turns come down as players go up, and playback slows down.** The load a round puts on a
+player is not the board, it is *everyone else's tiles*: turns × dogs. Five turns of eight
+dogs is 40 arrows to keep track of, and past somewhere around 25 the round stops being
+planned and starts being merely watched. Two open turns plus the secret one at eight dogs
+is 24. The same argument runs the other way for the walk phase — more dogs to follow means
+each tick needs longer to take in — and the turns saved pay for it: the large board gives
+up two 30-second placement turns and spends about 15 seconds of that on a slower walk.
+Stamina is the ceiling on that: 30 ticks at 2.0s is a 60-second walk, the top of the band
+in §7, so slowing playback further means lowering stamina in the same breath.
 
 **These are deliberately tight, and the change is worth being explicit about.** The earlier
 spread (10/13/16) held player density near the 20–25 walkable tiles per dog recommended in
@@ -168,10 +179,11 @@ spots come from — but it is a different game from the one §4.4 was written ab
 
 Two consequences to watch:
 
-- **Tiles cover a large share of the board.** Eight players × 5 turns is 40 placements onto
-  roughly 50 free squares. At the default of one round that is the whole match, but it
-  means a late-turn board is dense with arrows, and collisions into scuff marks are common
-  rather than occasional.
+- **Tiles cover a large share of the board.** Eight players × 3 turns is 24 placements, and
+  the per-board turn counts above are largely what keeps that number sane — at five turns
+  it was 40 onto roughly 50 free squares. At the default of one round that is the whole
+  match, and it still means a late-turn board is dense with arrows, with collisions into
+  scuff marks common rather than occasional.
 - **Stamina had to come down a long way**, and the small board wants far less than intuition
   suggests — see below.
 
@@ -431,21 +443,23 @@ other dogs, which move, and reads only terrain and scuff marks.
 
 ## 5. Direction Tiles
 
-### 5.1 A palette, not a hand — **unlimited supply, five placements**
+### 5.1 A palette, not a hand — **unlimited supply, three to five placements**
 
 Every player can choose from **↑ ↓ ← → jump** on every turn, and **tiles are never used
 up**. Place a → on turn 1 and you can place another → on turn 2. One placement per turn,
-five turns.
+and **how many turns is a property of the board** (§4.1): five at two players, four at
+three to five, three at six to eight.
 
-The scarce resource is **placements and positions**, not tile kinds. Five placements is the
-right number for two reasons:
+The scarce resource is **placements and positions**, not tile kinds. What sets the number is
+the same two things at every player count:
 
-- **Board density.** 8 players × 5 placements = 40 tiles on ~300 walkable squares — about
-  13% of the walkable map is arrows. Dense enough that routes cross and collide constantly.
-  At 7 each it's ~19% and the board becomes noise; nobody can predict anything, which
-  paradoxically makes planning pointless.
-- **Round length.** Five turns of ~30 seconds is about 2.5 minutes of planning per round.
-  Six or seven pushes a match past 15 minutes, which is long for a living-room game.
+- **Board density.** 8 players × 3 placements = 24 tiles; 2 players × 5 is 10. Dense enough
+  that routes cross and collide constantly, without the board becoming noise — past roughly
+  25 tiles nobody can predict anything, which paradoxically makes planning pointless. This
+  is why the count falls as players rise rather than staying fixed.
+- **Round length.** Three to five turns of ~30 seconds is 1.5–2.5 minutes of planning per
+  round. Five turns at eight players pushed a match past 15 minutes, which is long for a
+  living-room game, *and* asked everyone to track 40 arrows.
 
 **If rounds feel too short, add a round — don't add placements.** More rounds increases
 play time while keeping each round legible; more placements just makes each round muddier.
@@ -528,18 +542,22 @@ This is a better rule than plain cancellation. Two players fighting over one squ
 just waste two tiles into the void — they jointly *build a wall* there, which changes the
 map for everyone and often ruins both their plans in a way that's funny rather than flat.
 
-Secret-turn (turn 5) collisions cancel silently. The scuff mark is only revealed when the
-first dog reaches it.
+Secret-turn collisions cancel silently. The scuff mark is only revealed when the first dog
+reaches it.
 
 ### 5.5 The secret turn
 
-Turn 5's tile stays hidden through the whole placement phase and is revealed the moment a
-dog steps on it, mid-walk. Two consequences worth designing around:
+**The last turn of a round is always the secret one**, whether that is turn 5 on the small
+board or turn 3 on the large one. Its tile stays hidden through the whole placement phase
+and is revealed the moment a dog steps on it, mid-walk. Two consequences worth designing
+around:
 
 - **Timing matters.** A secret tile placed where a dog has already passed does nothing. The
   secret turn rewards players who can predict where dogs will be *late* in the walk.
-- **It's the bluff turn.** Turns 1–4 leak information progressively; by turn 5 everyone has
-  a good model of everyone else's plan, which is exactly the moment to hide something.
+- **It's the bluff turn.** The open turns leak information progressively; by the last one
+  everyone has a good model of everyone else's plan, which is exactly the moment to hide
+  something. On the large board that model is built from two turns rather than four, so the
+  bluff is cheaper to pull off and the read is worth more.
 
 ---
 
@@ -602,11 +620,12 @@ Two things that were originally there for remote play are worth keeping anyway:
 - **The walk phase** is simulated to completion server-side and sent as one tick history;
   clients animate it locally (see above). 8 dogs × ~90 ticks × position/facing/score is a
   few KB. Never run the sim client-side and try to sync it.
-- **Tick rate** ⚖️ **1.5 seconds per tile**, with smooth interpolation between ticks. This is
-  deliberately slow. The whole payoff of the game is watching a route you built play out
-  against seven other people's, and at 5 ticks/second the walk phase was over before anyone
-  could follow what had happened. Stamina is sized per board so the walk lands at 44–62
-  seconds.
+- **Tick rate** ⚖️ **1.5–2.0 seconds per tile, set by the board** (§4.1), with smooth
+  interpolation between ticks. This is deliberately slow. The whole payoff of the game is
+  watching a route you built play out against seven other people's, and at 5 ticks/second
+  the walk phase was over before anyone could follow what had happened. The bigger boards
+  are slower because there are more dogs on them to follow at once, not because they are
+  bigger. Stamina is sized per board so the walk lands at 44–62 seconds.
 - **Jumping dogs scale up** as they rise, so the hop reads as coming toward the camera
   rather than sliding upward. The ground shadow stays put and shrinks.
 

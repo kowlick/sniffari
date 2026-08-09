@@ -61,6 +61,10 @@ function randomTiles(map, rand, count) {
   return tiles;
 }
 
+/** Playback speed for the board of this size, defaulting to the slowest if it isn't one. */
+const secondsPerTile = (size) =>
+  (CONFIG.boards.find((b) => b.size === size) ?? CONFIG.boards.at(-1)).secondsPerTile;
+
 const pct = (arr, p) => arr.slice().sort((a, b) => a - b)[Math.floor((arr.length - 1) * p)];
 const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
 
@@ -84,7 +88,9 @@ function run(size, dogCount, withTiles, stamina, opts = {}) {
       .slice(0, dogCount)
       .map((s, i) => ({ id: `d${i}`, breed: 'x', x: s.x, y: s.y, dir: s.dir }));
     const rand = mulberry32(seed * 7919);
-    const tiles = withTiles ? randomTiles(map, rand, dogCount * 5) : new Map();
+    // One tile per dog per placement turn, which is per board now — see CONFIG.boards.turns.
+    const turns = (CONFIG.boards.find((b) => b.size === size) ?? CONFIG.boards.at(-1)).turns;
+    const tiles = withTiles ? randomTiles(map, rand, dogCount * turns) : new Map();
     const result = simulateWalk(map, dogs, tiles, cfg);
 
     lengths.push(result.ticks.length);
@@ -127,7 +133,9 @@ function run(size, dogCount, withTiles, stamina, opts = {}) {
   );
   return {
     round: pct(lengths, 0.5),
-    roundSec: (pct(lengths, 0.5) / CONFIG.sim.ticksPerSecond).toFixed(0),
+    // Playback speed is per board, so a round on the large map is longer in seconds than
+    // its tick count alone suggests.
+    roundSec: (pct(lengths, 0.5) * secondsPerTile(size)).toFixed(0),
     dog: `${pct(perDogLen, 0.5)} (${pct(perDogLen, 0.1)}-${pct(perDogLen, 0.9)})`,
     cover: `${Math.round(mean(coverage) * 100)}%`,
     edge: `${Math.round(mean(edgeTime) * 100)}%`,
@@ -139,7 +147,9 @@ function run(size, dogCount, withTiles, stamina, opts = {}) {
   };
 }
 
-console.log(`\n${SEEDS} seeds per config, at ${CONFIG.sim.ticksPerSecond} ticks/sec.`);
+console.log(
+  `\n${SEEDS} seeds per config, at ${CONFIG.boards.map((b) => `${b.name} ${b.secondsPerTile}s`).join(', ')} per tile.`,
+);
 console.log('cover = share of the walkable board one dog actually visits.');
 console.log('edge  = share of its living ticks a dog spends in the lane next to the fence.');
 console.log('cut = share of dogs done inside 30% of their stamina — their placements never fired.');

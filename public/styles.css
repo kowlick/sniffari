@@ -442,6 +442,24 @@ button.claim.armed {
   margin-left: auto;
 }
 
+/* The crown marking the host. Slightly down-sized and nudged off the baseline so it reads
+   as a badge on the name rather than as part of it. */
+.host {
+  font-size: 0.9em;
+  vertical-align: 1px;
+}
+
+/* A claim button counting down the host's grace period is not yet an offer, so it must not
+   light up under the cursor either — hence overriding the hover rule back to the base. */
+button.claim:disabled,
+button.claim:disabled:hover {
+  opacity: 0.55;
+  cursor: default;
+  border-style: dashed;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
 .hint {
   color: var(--muted);
   font-size: 12px;

@@ -6,7 +6,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import { CONFIG } from '../config.ts';
 import { loadMap } from '../sim/map.ts';
-import { Room, boardRows, type Board, type Connection } from './room.ts';
+import { Room, makeBoard, type Board, type Connection } from './room.ts';
 import { DOGS, type ClientMessage, type ServerMessage } from './protocol.ts';
 import { buildLevel } from '../puzzle/generate.mjs';
 import { createRun, step, tap, tapTarget } from '../shared/puzzle-rules.mjs';
@@ -20,17 +20,7 @@ const PUBLIC_DIR = join(ROOT, 'public');
  * maps are what the lobby shows before anyone has pressed start.
  */
 const boards: Board[] = await Promise.all(
-  CONFIG.boards.map(async (b) => {
-    const map = await loadMap(join(ROOT, 'maps', b.file), b.name);
-    return {
-      name: b.name,
-      stamina: b.stamina,
-      maxPlayers: b.maxPlayers,
-      size: b.size,
-      map,
-      rows: boardRows(map),
-    };
-  }),
+  CONFIG.boards.map(async (b) => makeBoard(b, await loadMap(join(ROOT, 'maps', b.file), b.name))),
 );
 
 /** One game per server. Everyone is on the same LAN, so there is nothing to disambiguate. */

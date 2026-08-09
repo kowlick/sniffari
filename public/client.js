@@ -377,11 +377,16 @@ function renderLobby() {
   // The host's seat is empty and I am not in it — the room cannot be started until someone
   // takes over, so offer it rather than leaving everyone waiting on a person who left.
   const canClaim = state.hostAway && !me?.isHost;
-  $('claim-host').classList.toggle('hidden', !canClaim);
+  renderClaimHost(canClaim, me);
   $('leave').classList.toggle('hidden', !me);
 
   // Say exactly what is missing, rather than only refusing on the Start button.
   const min = state.config.minPlayers;
+  // Name the host rather than saying "the host": in a room of eight, "waiting for the host"
+  // is not actionable unless you know which seat that is.
+  // Not escaped: the hint is written with textContent, which escapes nothing and needs no
+  // help. Running it through escapeHtml would show the entities.
+  const hostName = state.players.find((p) => p.isHost)?.name ?? 'the host';
   const hint = !me?.dogId
     ? 'Pick a dog above to join the walk.'
     : withDogs < min
@@ -389,7 +394,9 @@ function renderLobby() {
       : canClaim
         ? `${withDogs} ready — the host has left. Claim host to start the match.`
         : !me.isHost
-          ? `${withDogs} ready — waiting for the host to start.`
+          ? state.hostClaimableAt !== null
+            ? `${withDogs} ready — ${hostName} has dropped out. You can take over in a moment.`
+            : `${withDogs} ready — waiting for ${hostName} 👑 to start.`
           : withDogs === 1
             ? 'Ready. You can start solo, or wait for others to join.'
             : `${withDogs} dogs ready — start whenever you like.`;
@@ -410,7 +417,7 @@ function renderPlayers() {
     row.className = 'player' + (p.id === you ? ' me' : '') + (p.connected ? '' : ' gone');
     row.innerHTML = `
       <span class="swatch" style="background:${DOG_COLORS.get(p.dogId) ?? '#666'}"></span>
-      <span class="pname">${escapeHtml(p.name)}${p.isBot ? ' 🤖' : p.ai ? ' ⚙️' : ''}</span>
+      <span class="pname">${escapeHtml(p.name)}${p.isBot ? ' 🤖' : p.ai ? ' ⚙️' : ''}${p.isHost ? ' <span class="host" title="Host">👑</span>' : ''}</span>
       <span class="pdog">${escapeHtml(dogName(p.dogId))}</span>
       <span class="pscore">${p.matchScore}${state.phase === 'score' || state.phase === 'match-end' ? ` (+${p.roundScore})` : ''}</span>
       <span class="plock">${p.locked ? '✓' : ''}</span>`;
@@ -480,7 +487,11 @@ function renderLobbyRoster(me) {
     row.className = 'lp' + (p.connected ? '' : ' gone');
     row.innerHTML =
       `<span class="swatch" style="background:${DOG_COLORS.get(p.dogId) ?? '#3a3f47'}"></span>` +
-      `<span class="pname">${escapeHtml(p.name)}${p.isBot ? ' 🤖' : ''}${p.id === you ? ' (you)' : ''}</span>` +
+      // The crown answers "who can start this?" — without it a room that is waiting on
+      // somebody gives no clue who, and nobody knows whether the seat is theirs already.
+      `<span class="pname">${escapeHtml(p.name)}${p.isBot ? ' 🤖' : ''}` +
+      `${p.isHost ? ' <span class="host" title="Host — starts the match and sets its length">👑</span>' : ''}` +
+      `${p.id === you ? ' (you)' : ''}</span>` +
       `<span class="pdog">${p.dogId ? escapeHtml(dogName(p.dogId)) : 'choosing…'}${escapeHtml(tag)}</span>`;
 
     if (isHost && p.removable) {
@@ -503,6 +514,51 @@ function renderLobbyRoster(me) {
     }
     el.appendChild(row);
   }
+}
+
+/** Ticker for the claim-host countdown, kept in one place so only one ever runs. */
+let claimTick = null;
+
+/**
+ * The claim-host button, with the grace period made visible.
+ *
+ * Showing it only once the seat was *already* claimable meant it appeared from nowhere
+ * fifteen seconds after the host's tab closed, with nothing on screen in between — which
+ * reads as a bug rather than as a rule, and leaves anyone testing it convinced the feature
+ * is missing. It now appears the moment the host's socket drops, disabled and counting
+ * down, so the wait is something you watch rather than something you have to know about.
+ */
+function renderClaimHost(canClaim, me) {
+  const btn = $('claim-host');
+  if (!btn) return;
+  if (claimTick) {
+    clearInterval(claimTick);
+    claimTick = null;
+  }
+
+  // Nothing to offer someone who is not in the room, or who is holding the seat already.
+  const waiting = Boolean(me) && !me.isHost && !canClaim && state.hostClaimableAt !== null;
+  btn.classList.toggle('hidden', !(canClaim || waiting));
+  btn.disabled = !canClaim;
+  if (!waiting) {
+    btn.textContent = 'Claim host';
+    return;
+  }
+
+  // The server broadcasts again as the grace expires, so this only has to keep the label
+  // honest until then.
+  const paint = () => {
+    if (state.hostClaimableAt === null) {
+      clearInterval(claimTick);
+      claimTick = null;
+      return;
+    }
+    const secs = Math.ceil(Math.max(0, state.hostClaimableAt - Date.now()) / 1000);
+    btn.textContent = secs > 0 ? `Claim host (${secs}s)` : 'Claim host';
+    btn.disabled = secs > 0;
+  };
+  paint();
+  claimTick = setInterval(paint, 250);
 }
 
 /** How many rounds the match runs. Host's call, made before starting. */

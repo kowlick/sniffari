@@ -27,13 +27,18 @@ no bundler.** Consequences worth remembering:
 
 Three layers, and the boundaries between them are the important part.
 
-**Two boards, picked by player count** — small 8×8 (1–4), large 10×10 (5–8), each with its
-own stamina (`CONFIG.boards`). `Room.board` resolves live in the lobby and is frozen at match
-start. These are deliberately *tight*: density sits near 8 walkable tiles per dog rather than
-the 20–25 §4.4 recommends, so dogs are constantly in each other's way. Two things follow that
-are easy to trip over — 8 players × 5 turns is 40 placements onto ~50 free squares, and the
-8×8 wants far *less* stamina than intuition says (median dog life there is 15 ticks whatever
-you give it, so extra stamina only inflates the share of dogs whose tiles never fired).
+**Three boards, picked by player count** — small 8×8 (1–2), medium 10×10 (3–5), large 12×12
+(6–8). Each carries its own stamina, **turn count and playback speed** (`CONFIG.boards`).
+`Room.board` resolves live in the lobby and is frozen at match start. These are deliberately
+*tight*: density sits near 8-16 walkable tiles per dog rather than the 20–25 §4.4 recommends,
+so dogs are constantly in each other's way. Two things follow that are easy to trip over —
+the 8×8 wants far *less* stamina than intuition says (median dog life there is 15 ticks
+whatever you give it, so extra stamina only inflates the share of dogs whose tiles never
+fired), and **turns have to fall as players rise**. What a player must hold in their head is
+everyone else's tiles, so the load is turns × dogs: five turns of eight dogs is 40 arrows
+nobody can track. Hence 5/4/3 turns (the last always the secret one) and 1.5/1.8/2.0 seconds
+per tile — the walk slows on the crowded boards for the same reason, paid for by the turns
+saved. Nothing outside `CONFIG.boards` may assume a fixed number of turns.
 
 **A fresh map is generated per match**, not per round — knowing the ground is most of the
 skill, so it must stay put across the three rounds inside a match. `src/sim/generate.mjs` is
@@ -84,12 +89,16 @@ the walk payload, at the tick a dog steps on one.
 setting its length and ending it early are host-only, so a host who closes their tab leaves
 a lobby nobody can start. The server cannot know that someone *left* — only that their
 socket shut — so `Room` publishes `hostAway` once the host's connection has been gone for
-`CONFIG.lobby.hostGraceMs`, and any player may then send `claimHost`. Two things make that
+`CONFIG.lobby.hostGraceMs`, and any player may then send `claimHost`. Three things make that
 work and are easy to break: the WebSocket **ping/pong heartbeat** in `index.ts`, without
-which a phone that leaves the Wi-Fi looks connected for minutes of TCP timeout; and the
-timer in `markHostAway`, which broadcasts when the grace expires — nothing else would wake
-an idle lobby, and a claim button that only appears on the next unrelated state change is a
-button nobody finds. Mid-match needs no button: the phase timers run the match out to
+which a phone that leaves the Wi-Fi looks connected for minutes of TCP timeout; the timer in
+`markHostAway`, which broadcasts when the grace expires — nothing else would wake an idle
+lobby, and a claim button that only appears on the next unrelated state change is a button
+nobody finds; and **the seat has to be legible even when nothing is wrong**. The roster
+crowns the host (`isHost`) and `hostClaimableAt` publishes the moment the seat opens, so the
+claim button shows up the instant the host drops, counting down, rather than materialising
+fifteen seconds later. Without those two, a room waiting on its host says so without saying
+on whom, and the usual conclusion is that claiming is broken rather than not yet due. Mid-match needs no button: the phase timers run the match out to
 `match-end` on their own, and the lobby overlay comes back with the claim button on it.
 
 **`src/server/ai/` — computer opponents, and the boundary that stops them cheating.**

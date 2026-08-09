@@ -26,7 +26,7 @@ const rounds = Number(process.argv[2] ?? 60);
 const boardName = process.argv[3] ?? 'small';
 const board = CONFIG.boards.find((b) => b.name === boardName) ?? CONFIG.boards[0]!;
 
-/** One round of five simultaneous placement turns, played out by the given tiers. */
+/** One round of simultaneous placement turns — as many as this board runs — by tier. */
 async function playRound(tiers: Difficulty[], seed: number) {
   const { text } = generateMap({ size: board.size, seed });
   const map = parseMap(text, `seed ${seed}`);
@@ -48,8 +48,8 @@ async function playRound(tiers: Difficulty[], seed: number) {
   const tiles = new Map<string, PlacedTile>();
   const rng = makeRng(seed * 7919 + 13);
 
-  for (let turn = 1; turn <= CONFIG.round.turns; turn++) {
-    const secret = turn === CONFIG.round.secretTurn;
+  for (let turn = 1; turn <= board.turns; turn++) {
+    const secret = turn === board.turns;
     // Simultaneous: every seat chooses against the same board, then all are committed.
     const chosen = await Promise.all(
       tiers.map(async (tier, i) => {
@@ -57,7 +57,7 @@ async function playRound(tiers: Difficulty[], seed: number) {
           playerId: `p${i}`,
           dogId: `p${i}`,
           turn,
-          turnsPerRound: CONFIG.round.turns,
+          turnsPerRound: board.turns,
           secretTurn: secret,
           map,
           dogs,

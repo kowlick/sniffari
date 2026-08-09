@@ -22,11 +22,6 @@ export const CONFIG = {
      * a 14-second walk phase at 5 ticks/second. Measured with scripts/tune.mjs.
      */
     stamina: 30,
-    /**
-     * Playback speed on the client. Does not affect the simulation itself.
-     * 1.5 seconds per tile — slow enough to follow every dog, brisk enough to keep moving.
-     */
-    ticksPerSecond: 1 / 1.5,
     /** A dog boxed in on all four sides gives up after turning in place this many times. */
     stuckTurnsBeforeGiveUp: 4,
     /**
@@ -62,11 +57,10 @@ export const CONFIG = {
     drain: 0,
   },
 
+  // Placements per round are *not* here: they live on the board (`boards[].turns`), because
+  // how many turns a round can carry is a function of how many dogs are in it. The last turn
+  // of whatever that number is, is always the secret one.
   round: {
-    /** Placements per round. Turn 5 is the secret turn. */
-    turns: 5,
-    /** The last turn is not revealed until a dog steps on the tile mid-walk. */
-    secretTurn: 5,
     /**
      * Default match length. The host can change it in the lobby, up to maxRounds.
      *
@@ -109,11 +103,25 @@ export const CONFIG = {
    * single run — it only takes the share of dogs finished inside 30% of their stamina from
    * 18% to 33%, which is §4.4's headline metric and counts players who placed tiles and
    * watched none of them fire.
+   *
+   * `turns` and `secondsPerTile` scale with the player count for the same reason, and it
+   * is a reason about people rather than about the board. What a player has to hold in
+   * their head before the walk is *every other player's tiles*, so the load is turns ×
+   * dogs: five turns of eight dogs is 40 arrows nobody can keep track of, and the round
+   * stops being planned and starts being watched. Two turns plus the secret one at eight
+   * dogs is 24 — still a dense board, but one you can read. The last turn is always the
+   * secret turn, so these are (turns - 1) open placements plus the hidden one.
+   *
+   * Playback slows down the other way for the same reason: more dogs to follow per tick
+   * means each tick needs longer to take in. Fewer turns pays for it — the large board
+   * gives up two 30-second placement turns and spends ~15 of that on a walk you can watch.
+   * The ceiling is stamina: at 30 ticks, 2.0s/tile is a 60-second walk, which is the top of
+   * the 44-62s band DESIGN.md §7 asks for. Slowing further means lowering stamina too.
    */
   boards: [
-    { name: 'small', file: 'small.txt', size: 8, maxPlayers: 2, stamina: 20 },
-    { name: 'medium', file: 'medium.txt', size: 10, maxPlayers: 5, stamina: 30 },
-    { name: 'large', file: 'large.txt', size: 12, maxPlayers: 8, stamina: 30 },
+    { name: 'small', file: 'small.txt', size: 8, maxPlayers: 2, stamina: 20, turns: 5, secondsPerTile: 1.5 },
+    { name: 'medium', file: 'medium.txt', size: 10, maxPlayers: 5, stamina: 30, turns: 4, secondsPerTile: 1.8 },
+    { name: 'large', file: 'large.txt', size: 12, maxPlayers: 8, stamina: 30, turns: 3, secondsPerTile: 2 },
   ],
 
   /**
